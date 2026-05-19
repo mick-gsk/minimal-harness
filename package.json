@@ -1,0 +1,32 @@
+{
+  "name": "minimal-harness",
+  "version": "0.1.0",
+  "description": "Schlankes, framework-agnostisches Agent-Harness für lokale LLMs (Ollama-first)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "lint": "eslint src examples",
+    "format": "prettier --write .",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "eslint": "^9.0.0",
+    "jest": "^29.0.0",
+    "@jest/globals": "^29.0.0",
+    "ts-jest": "^29.0.0",
+    "prettier": "^3.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {}
+}
