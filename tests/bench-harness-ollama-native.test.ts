@@ -14,6 +14,21 @@ const kvTask: BenchTask = {
 };
 
 describe("ollamaNativeHarness", () => {
+  it("tells the model to reply with a final answer when done (fairness vs text-protocol contestants)", async () => {
+    const world = new WorldState();
+    const tools = kvTask.makeTools(world);
+    const seen: Array<Array<{ role: string; content: string }>> = [];
+    const llm = {
+      async generate(messages: Array<{ role: string; content: string }>) {
+        seen.push(messages);
+        return { content: "done" };
+      },
+    };
+    await ollamaNativeHarness.run(kvTask, llm, tools);
+    const system = seen[0]?.find((m) => m.role === "system");
+    expect(system?.content).toMatch(/when you are done, reply with your final answer/i);
+  });
+
   it("executes native tool calls and finishes on plain content", async () => {
     const world = new WorldState();
     const tools = kvTask.makeTools(world);

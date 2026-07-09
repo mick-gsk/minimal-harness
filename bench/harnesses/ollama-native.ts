@@ -17,7 +17,17 @@ export const ollamaNativeHarness: HarnessAdapter = {
     const byName = new Map(tools.map((t) => [t.name, t]));
 
     const messages: ChatMessage[] = [
-      { role: "system", content: "You are a helpful assistant. Use the provided tools when needed." },
+      {
+        role: "system",
+        // Completion instruction added for fairness: the text-protocol
+        // contestants receive equivalent guidance via their protocol block
+        // ("To give a final answer respond EXACTLY: ..."). Without it, some
+        // models (observed: qwen3:4b) keep calling tools on pure side-effect
+        // tasks and never emit a final content-only message.
+        content:
+          "You are a helpful assistant. Use the provided tools when needed. " +
+          "When you are done, reply with your final answer.",
+      },
       { role: "user", content: task.prompt },
     ];
 
