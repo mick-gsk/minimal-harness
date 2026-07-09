@@ -10,7 +10,7 @@ export function scriptedLlm(responses: LLMResponse[]): LLMAdapter & { calls: num
     calls: 0,
     async generate(): Promise<LLMResponse> {
       adapter.calls++;
-      const r = responses[Math.min(i, responses.length - 1)];
+      const r = responses[Math.min(i, responses.length - 1)]!;
       i++;
       return r;
     },

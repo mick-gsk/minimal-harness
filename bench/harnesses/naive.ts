@@ -29,8 +29,9 @@ export const naiveHarness: HarnessAdapter = {
 
         const finalMatch = /ACTION:\s*final_answer[\s\S]*?ANSWER:\s*([\s\S]*)/.exec(text);
         if (finalMatch) {
+          const answer = finalMatch[1] ?? "";
           return {
-            finalAnswer: finalMatch[1].trim(),
+            finalAnswer: answer.trim(),
             terminatedReason: "final_answer",
             turns: turn + 1,
             llmCalls: 0,
@@ -54,10 +55,11 @@ export const naiveHarness: HarnessAdapter = {
           };
         }
 
-        const toolName = toolMatch[1];
+        const toolName = toolMatch[1] ?? "";
+        const argsRaw = toolMatch[2] ?? "";
         let args: unknown;
         try {
-          args = JSON.parse(toolMatch[2]);
+          args = JSON.parse(argsRaw);
         } catch {
           return {
             finalAnswer: null,
