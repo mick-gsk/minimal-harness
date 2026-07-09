@@ -19,7 +19,7 @@ export const suiteV1: BenchTask[] = [
     prompt: "What is 17 * 23? Use the calculator tool.",
     maxTurns: 6,
     makeTools: () => [calculatorTool],
-    check: (r) => finalOk(r) && r.finalAnswer!.includes("391"),
+    check: (r) => finalOk(r) && /\b391\b/.test(r.finalAnswer!),
   },
   {
     id: "calc-nested",
@@ -60,7 +60,7 @@ export const suiteV1: BenchTask[] = [
     maxTurns: 8,
     makeTools: (world: WorldState) => makeKvTools(world),
     check: (r, world) =>
-      finalOk(r) && world.kv.get("answer") === "42" && r.finalAnswer!.includes("42"),
+      finalOk(r) && world.kv.get("answer") === "42" && /\b42\b/.test(r.finalAnswer!),
   },
   {
     id: "kv-transfer",
@@ -91,7 +91,7 @@ export const suiteV1: BenchTask[] = [
     prompt: "What time is it right now in the timezone Asia/Tokyo? Use the clock tool.",
     maxTurns: 6,
     makeTools: () => [clockTool],
-    check: (r) => finalOk(r) && r.toolCallCount >= 1,
+    check: (r) => finalOk(r) && r.toolCallCount >= 1 && /\d{1,2}:\d{2}/.test(r.finalAnswer!),
   },
   {
     id: "no-tool-capital",
