@@ -75,7 +75,8 @@ export const suiteV2: BenchTask[] = [
     prompt: "What is 127 * 43? Use the calculator tool.",
     maxTurns: 6,
     makeTools: () => [calculatorTool],
-    check: (r) => numOk(r, 5461),
+    // Accepts "5461" and the common thousands-separator rendering "5,461".
+    check: (r) => finalOk(r) && /(?<![\d.,-])5,?461(?!\d|[.,]\d)/.test(r.finalAnswer!),
   },
   {
     id: "v2-s7-clock-utc",
@@ -439,7 +440,7 @@ export const suiteV2: BenchTask[] = [
       "Fetch the secret number with the unstable.lookup tool (retry on transient failures), then multiply it by 3 with the calculator and tell me the result.",
     maxTurns: 10,
     makeTools: (world: WorldState) => [makeUnstableTool(world, 1, "17"), calculatorTool],
-    check: (r) => numOk(r, 51),
+    check: (r, world) => numOk(r, 51) && (world.counters.get("unstable.lookup") ?? 0) >= 2,
   },
 
   // ── multi-tool (8) ──────────────────────────────────────────────────
@@ -471,10 +472,10 @@ export const suiteV2: BenchTask[] = [
   {
     id: "v2-x3-calc-store",
     category: "multi-tool",
-    prompt: "Compute 37 * 3 with the calculator and store the result under the key 'answer111'.",
+    prompt: "Compute 37 * 3 with the calculator and store the result under the key 'calc-out'.",
     maxTurns: 10,
     makeTools: (world: WorldState) => [...makeKvTools(world), calculatorTool],
-    check: (r, world) => finalOk(r) && world.kv.get("answer111") === "111",
+    check: (r, world) => finalOk(r) && world.kv.get("calc-out") === "111",
   },
   {
     id: "v2-x4-read-subtract",
@@ -504,10 +505,10 @@ export const suiteV2: BenchTask[] = [
   {
     id: "v2-x6-sum-store",
     category: "multi-tool",
-    prompt: "Compute 29 + 46 with the calculator and store the result under the key 'sum75'.",
+    prompt: "Compute 29 + 46 with the calculator and store the result under the key 'sum-out'.",
     maxTurns: 10,
     makeTools: (world: WorldState) => [...makeKvTools(world), calculatorTool],
-    check: (r, world) => finalOk(r) && world.kv.get("sum75") === "75",
+    check: (r, world) => finalOk(r) && world.kv.get("sum-out") === "75",
   },
   {
     id: "v2-x7-square-store",

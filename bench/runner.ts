@@ -22,6 +22,10 @@ const modelNames = (process.env.BENCH_MODELS ?? DEFAULT_MODELS.join(","))
   .map((s) => s.trim())
   .filter(Boolean);
 const suiteEnv = process.env.BENCH_SUITE ?? "v2";
+if (!["dev", "v1", "v2"].includes(suiteEnv)) {
+  console.error(`✗ Unbekannte BENCH_SUITE '${suiteEnv}' — erlaubt: dev, v1, v2`);
+  process.exit(1);
+}
 const useDev = suiteEnv === "dev";
 const tasks = useDev ? devTasks : suiteEnv === "v1" ? suiteV1 : suiteV2;
 const suiteLabel = useDev ? "dev (NICHT reportfähig)" : suiteEnv === "v1" ? SUITE_VERSION : SUITE_V2_VERSION;
