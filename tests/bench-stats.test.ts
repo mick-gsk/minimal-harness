@@ -46,4 +46,8 @@ describe("passK", () => {
   it("returns 0 for an empty task list", () => {
     expect(passK([])).toBe(0);
   });
+
+  it("does not count a task with zero runs as passing", () => {
+    expect(passK([[true, true], []])).toBeCloseTo(0.5, 5);
+  });
 });
