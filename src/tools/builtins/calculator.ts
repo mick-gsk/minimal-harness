@@ -11,8 +11,12 @@ interface CalcOutput {
 
 /** Evaluates basic arithmetic safely using a recursive descent parser. No eval(). */
 function safeEval(expr: string): number {
-  const tokens = expr.replace(/\s+/g, "").match(/\d+\.?\d*|[+\-*/()]/g);
-  if (!tokens) throw new Error("Invalid expression");
+  const matched = expr.replace(/\s+/g, "").match(/\d+\.?\d*|[+\-*/()]/g);
+  if (!matched) throw new Error("Invalid expression");
+  // Bind to a non-nullable const so the nested parser closures below see a
+  // definitely-present token array (control-flow narrowing does not cross
+  // function boundaries).
+  const tokens: RegExpMatchArray = matched;
 
   let pos = 0;
 

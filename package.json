@@ -16,7 +16,8 @@
     "dev": "tsup --watch",
     "lint": "eslint src examples",
     "format": "prettier --write .",
-    "test": "node --experimental-vm-modules node_modules/.bin/jest"
+    "test": "node --experimental-vm-modules node_modules/.bin/jest",
+    "bench:probe": "npx tsx bench/probe.ts"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

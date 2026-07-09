@@ -12,7 +12,7 @@ import { clockTool } from "../src/tools/builtins/clock.js";
 import { calculatorTool } from "../src/tools/builtins/calculator.js";
 import { textUtilsTool } from "../src/tools/builtins/text-utils.js";
 
-const llm = new OllamaClient({ baseUrl: "http://localhost:11434", model: "llama3" });
+const llm = new OllamaClient({ baseUrl: "http://localhost:11434", model: "qwen3:14b" });
 const memory = new InMemoryMemory();
 const toolBridge = new DefaultToolBridge();
 toolBridge.register(clockTool);
@@ -25,7 +25,9 @@ const agentLoop = new DefaultAgentLoop({
   toolBridge,
   validator: new StructuredOutputValidator(),
   promptBuilder: new DefaultPromptBuilder(),
-  systemInstruction: "You are a helpful assistant with access to tools. Use them when needed.",
+  systemInstruction:
+    "You are a helpful assistant with access to tools. Use them when needed. " +
+    "Call exactly one tool per response, then wait for its result before continuing.",
 });
 
 const result = await agentLoop.run({

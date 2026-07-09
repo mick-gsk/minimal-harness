@@ -6,6 +6,8 @@ import { DefaultPromptBuilder } from "../src/core/prompt-builder.js";
 import { StructuredOutputValidator } from "../src/guardrails/validator.js";
 import { adapterFromFn } from "../src/llm/llm-adapter.js";
 import { calculatorTool } from "../src/tools/builtins/calculator.js";
+import { defaultPolicy } from "../src/guardrails/policy.js";
+import type { ChatMessage } from "../src/types/llm.js";
 
 function makeDeps(responses: string[]) {
   let i = 0;
@@ -28,6 +30,14 @@ describe("DefaultAgentLoop", () => {
     const result = await loop.run({ sessionId: "s1", userMessage: "hi" });
     expect(result.terminatedReason).toBe("final_answer");
     expect(result.finalAnswer).toBe("Hello!");
+    expect(result.finalState).toBe("done");
+  });
+
+  it("ends in a failed state when output never validates", async () => {
+    const loop = makeDeps(Array(5).fill("this is not the required format at all"));
+    const result = await loop.run({ sessionId: "s4", userMessage: "hi", maxTurns: 3 });
+    expect(result.terminatedReason).toBe("validation_failed");
+    expect(result.finalState).toBe("failed");
   });
 
   it("executes a tool and then returns final_answer", async () => {
@@ -44,5 +54,119 @@ describe("DefaultAgentLoop", () => {
     const loop = makeDeps(Array(5).fill(`ACTION: tool_call\nTOOL: calculator.evaluate\nARGS: {"expression":"1+1"}`));
     const result = await loop.run({ sessionId: "s3", userMessage: "loop", maxTurns: 3 });
     expect(result.terminatedReason).toBe("max_turns");
+  });
+
+  it("uses native tool_calls from the adapter instead of text parsing", async () => {
+    let call = 0;
+    const llm = adapterFromFn(async () => {
+      call++;
+      if (call === 1) {
+        return { content: "", toolCalls: [{ name: "calculator.evaluate", arguments: { expression: "6*7" } }] };
+      }
+      return { content: "ACTION: final_answer\nANSWER: 42" };
+    });
+    const toolBridge = new DefaultToolBridge();
+    toolBridge.register(calculatorTool);
+    const loop = new DefaultAgentLoop({
+      llm,
+      memory: new InMemoryMemory(),
+      toolBridge,
+      validator: new StructuredOutputValidator(),
+      promptBuilder: new DefaultPromptBuilder(),
+    });
+
+    const result = await loop.run({ sessionId: "nat", userMessage: "6*7?" });
+    expect(result.terminatedReason).toBe("final_answer");
+    expect(result.toolTrace).toHaveLength(1);
+    expect(result.toolTrace[0]!.output).toEqual({ expression: "6*7", result: 42 });
+  });
+
+  it("executes multiple native tool calls in one turn when policy allows", async () => {
+    let call = 0;
+    const llm = adapterFromFn(async () => {
+      call++;
+      if (call === 1) {
+        return {
+          content: "",
+          toolCalls: [
+            { name: "calculator.evaluate", arguments: { expression: "1+1" } },
+            { name: "calculator.evaluate", arguments: { expression: "2+2" } },
+          ],
+        };
+      }
+      return { content: "ACTION: final_answer\nANSWER: done" };
+    });
+    const toolBridge = new DefaultToolBridge();
+    toolBridge.register(calculatorTool);
+    const loop = new DefaultAgentLoop({
+      llm,
+      memory: new InMemoryMemory(),
+      toolBridge,
+      validator: new StructuredOutputValidator(),
+      promptBuilder: new DefaultPromptBuilder(),
+      policy: { ...defaultPolicy, maxToolCallsPerTurn: 2 },
+    });
+
+    const result = await loop.run({ sessionId: "multi", userMessage: "1+1 and 2+2?" });
+    expect(result.toolTrace).toHaveLength(2);
+    expect(result.toolTrace[0]!.output).toEqual({ expression: "1+1", result: 2 });
+    expect(result.toolTrace[1]!.output).toEqual({ expression: "2+2", result: 4 });
+  });
+
+  it("caps native tool calls to the per-turn policy limit", async () => {
+    let call = 0;
+    const llm = adapterFromFn(async () => {
+      call++;
+      if (call === 1) {
+        return {
+          content: "",
+          toolCalls: [
+            { name: "calculator.evaluate", arguments: { expression: "1+1" } },
+            { name: "calculator.evaluate", arguments: { expression: "2+2" } },
+          ],
+        };
+      }
+      return { content: "ACTION: final_answer\nANSWER: done" };
+    });
+    const toolBridge = new DefaultToolBridge();
+    toolBridge.register(calculatorTool);
+    const loop = new DefaultAgentLoop({
+      llm,
+      memory: new InMemoryMemory(),
+      toolBridge,
+      validator: new StructuredOutputValidator(),
+      promptBuilder: new DefaultPromptBuilder(),
+      policy: { ...defaultPolicy, maxToolCallsPerTurn: 1 },
+    });
+
+    const result = await loop.run({ sessionId: "cap", userMessage: "1+1 and 2+2?" });
+    expect(result.toolTrace).toHaveLength(1);
+  });
+
+  it("caps recent context and folds older turns into a summary", async () => {
+    const seen: ChatMessage[][] = [];
+    const llm = adapterFromFn(async (messages) => {
+      seen.push(messages);
+      return { content: "ACTION: final_answer\nANSWER: ok" };
+    });
+    const memory = new InMemoryMemory();
+    for (let i = 0; i < 30; i++) {
+      await memory.append("ctx", { role: i % 2 ? "assistant" : "user", content: `msg ${i}`, timestamp: 0 });
+    }
+    const loop = new DefaultAgentLoop({
+      llm,
+      memory,
+      toolBridge: new DefaultToolBridge(),
+      validator: new StructuredOutputValidator(),
+      promptBuilder: new DefaultPromptBuilder(),
+      maxContextMessages: 10,
+    });
+
+    await loop.run({ sessionId: "ctx", userMessage: "hi" });
+
+    const prompt = seen[0]!;
+    const nonSystem = prompt.filter((m) => m.role !== "system");
+    expect(nonSystem.length).toBeLessThanOrEqual(10);
+    expect(prompt.some((m) => m.role === "system" && m.content.includes("Context Summary"))).toBe(true);
   });
 });

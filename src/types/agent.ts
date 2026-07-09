@@ -1,4 +1,5 @@
 import type { ToolExecutionRecord } from "./tool.js";
+import type { AgentState } from "../core/state-machine.js";
 
 export interface AgentLoopInput {
   sessionId: string;
@@ -18,6 +19,8 @@ export interface AgentLoopResult {
   toolTrace: ToolExecutionRecord[];
   rawTurns: AgentTurn[];
   terminatedReason: "final_answer" | "max_turns" | "validation_failed" | "error";
+  /** Terminal state of the driving state machine: "done" or "failed". */
+  finalState: AgentState;
 }
 
 export interface AgentLoop {
