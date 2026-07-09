@@ -104,4 +104,68 @@ describe("OllamaClient", () => {
 
     globalThis.fetch = originalFetch;
   });
+
+  describe("seed support", () => {
+    it("sends options.seed from config.defaultSeed", async () => {
+      const originalFetch = globalThis.fetch;
+      const calls: unknown[] = [];
+      globalThis.fetch = async (_url: unknown, init?: RequestInit) => {
+        calls.push(JSON.parse(String(init?.body)));
+        return new Response(
+          JSON.stringify({ message: { role: "assistant", content: "ok" }, model: "m" }),
+          { status: 200 },
+        );
+      };
+
+      const client = new OllamaClient({
+        baseUrl: "http://localhost:11434",
+        model: "m",
+        defaultSeed: 1001,
+      });
+      await client.generate([{ role: "user", content: "hi" }]);
+      expect((calls[0] as { options: { seed?: number } }).options.seed).toBe(1001);
+
+      globalThis.fetch = originalFetch;
+    });
+
+    it("per-call seed overrides defaultSeed", async () => {
+      const originalFetch = globalThis.fetch;
+      const calls: unknown[] = [];
+      globalThis.fetch = async (_url: unknown, init?: RequestInit) => {
+        calls.push(JSON.parse(String(init?.body)));
+        return new Response(
+          JSON.stringify({ message: { role: "assistant", content: "ok" }, model: "m" }),
+          { status: 200 },
+        );
+      };
+
+      const client = new OllamaClient({
+        baseUrl: "http://localhost:11434",
+        model: "m",
+        defaultSeed: 1001,
+      });
+      await client.generate([{ role: "user", content: "hi" }], { seed: 42 });
+      expect((calls[0] as { options: { seed?: number } }).options.seed).toBe(42);
+
+      globalThis.fetch = originalFetch;
+    });
+
+    it("omits options.seed when no seed configured", async () => {
+      const originalFetch = globalThis.fetch;
+      const calls: unknown[] = [];
+      globalThis.fetch = async (_url: unknown, init?: RequestInit) => {
+        calls.push(JSON.parse(String(init?.body)));
+        return new Response(
+          JSON.stringify({ message: { role: "assistant", content: "ok" }, model: "m" }),
+          { status: 200 },
+        );
+      };
+
+      const client = new OllamaClient({ baseUrl: "http://localhost:11434", model: "m" });
+      await client.generate([{ role: "user", content: "hi" }]);
+      expect("seed" in (calls[0] as { options: object }).options).toBe(false);
+
+      globalThis.fetch = originalFetch;
+    });
+  });
 });

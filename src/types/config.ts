@@ -5,6 +5,8 @@ export interface OllamaClientConfig {
   model: string;
   defaultTemperature?: number;
   defaultMaxTokens?: number;
+  /** Applied to every request unless overridden per call via LLMGenerateOptions.seed. */
+  defaultSeed?: number;
 }
 
 export interface AgentConfig {

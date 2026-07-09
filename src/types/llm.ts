@@ -21,6 +21,8 @@ export interface LLMGenerateOptions {
   temperature?: number;
   maxTokens?: number;
   stop?: string[];
+  /** Sampling seed for reproducible runs on backends that support it. */
+  seed?: number;
   /** Tool specs offered to backends that support native function calling. */
   tools?: LLMToolSpec[];
   /** Called with each incremental content chunk when the backend streams. */
