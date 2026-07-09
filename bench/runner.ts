@@ -29,7 +29,23 @@ if (!["dev", "v1", "v2"].includes(suiteEnv)) {
 }
 const useDev = suiteEnv === "dev";
 const tasks = useDev ? devTasks : suiteEnv === "v1" ? suiteV1 : suiteV2;
-const suiteLabel = useDev ? "dev (NICHT reportfähig)" : suiteEnv === "v1" ? SUITE_VERSION : SUITE_V2_VERSION;
+
+// BENCH_SEEDS overrides the default seeds (e.g. "1001" for a quick probe).
+// Non-default seeds make the run a PROBE: report to stdout only, never
+// BENCHMARKS.md — official numbers always use the full default seed set.
+const seeds = process.env.BENCH_SEEDS
+  ? process.env.BENCH_SEEDS.split(",").map((s) => Number(s.trim())).filter((n) => Number.isFinite(n))
+  : SEEDS;
+const isProbe = seeds.join(",") !== SEEDS.join(",");
+if (seeds.length === 0) {
+  console.error(`✗ BENCH_SEEDS enthält keine gültigen Zahlen`);
+  process.exit(1);
+}
+
+const concurrency = Math.max(1, Number(process.env.BENCH_CONCURRENCY ?? "3") || 1);
+
+const suiteBase = useDev ? "dev (NICHT reportfähig)" : suiteEnv === "v1" ? SUITE_VERSION : SUITE_V2_VERSION;
+const suiteLabel = isProbe && !useDev ? `${suiteBase} PROBE (NICHT reportfähig, Seeds abweichend)` : suiteBase;
 
 // Preflight: Ollama reachable? Models present?
 const tagsRes = await fetch(`${baseUrl}/api/tags`).catch(() => null);
@@ -65,14 +81,16 @@ if (process.env.BENCH_SMOLAGENTS === "1") {
 
 console.log(
   `Bench: Suite ${suiteLabel} · Modelle: ${modelNames.join(", ")} · ` +
-    `Harnesses: ${harnesses.map((h) => h.name).join(", ")} · Seeds: ${SEEDS.join(",")}`,
+    `Harnesses: ${harnesses.map((h) => h.name).join(", ")} · Seeds: ${seeds.join(",")} · ` +
+    `Concurrency: ${concurrency}`,
 );
 
 const records = await runMatrix({
   tasks,
   harnesses,
   models,
-  seeds: SEEDS,
+  seeds,
+  concurrency,
   llmFactory: (model, seed) =>
     new OllamaClient({
       baseUrl: model.baseUrl,
@@ -86,19 +104,23 @@ const records = await runMatrix({
 const meta = {
   date: new Date().toISOString().slice(0, 10),
   suiteVersion: suiteLabel,
-  seeds: SEEDS,
+  seeds,
   temperature: TEMPERATURE,
-  k: SEEDS.length,
+  k: seeds.length,
 };
 
 mkdirSync("bench/results", { recursive: true });
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 writeFileSync(`bench/results/results-${stamp}.json`, JSON.stringify({ meta, records }, null, 2));
 
-if (!useDev) {
+if (!useDev && !isProbe) {
   writeFileSync("BENCHMARKS.md", buildReport(records, meta));
   console.log(`✓ BENCHMARKS.md geschrieben (${records.length} Läufe)`);
 } else {
   console.log(buildReport(records, meta));
-  console.log("⚠ dev-Suite: Report nur auf stdout, BENCHMARKS.md unverändert (spec §4.4b)");
+  console.log(
+    useDev
+      ? "⚠ dev-Suite: Report nur auf stdout, BENCHMARKS.md unverändert (spec §4.4b)"
+      : "⚠ PROBE (abweichende Seeds): Report nur auf stdout, BENCHMARKS.md unverändert",
+  );
 }
