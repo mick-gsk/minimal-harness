@@ -284,6 +284,62 @@ describe("DefaultAgentLoop", () => {
     });
   });
 
+  describe("verifyFinalAnswer", () => {
+    // Rationale: bench probe 2026-07-09 — llama3.1 reads correct values via
+    // tools, then does the arithmetic mentally and answers "32" instead of 53.
+    // One extra check-against-tool-results call catches that class of error.
+    it("issues one verification call after tool use and adopts the correction", async () => {
+      let call = 0;
+      const llm = adapterFromFn(async (messages: ChatMessage[]) => {
+        call++;
+        if (call === 1) {
+          return { content: `ACTION: tool_call\nTOOL: calculator.evaluate\nARGS: {"expression":"21+32"}` };
+        }
+        if (call === 2) {
+          return { content: "ACTION: final_answer\nANSWER: 32" }; // mental-math slip
+        }
+        // verification call: must reference checking against tool results
+        expect(messages[messages.length - 1]!.content).toMatch(/re-check|verify|tool results/i);
+        return { content: "ACTION: final_answer\nANSWER: 53" };
+      });
+      const toolBridge = new DefaultToolBridge();
+      toolBridge.register(calculatorTool);
+      const loop = new DefaultAgentLoop({
+        llm,
+        memory: new InMemoryMemory(),
+        toolBridge,
+        validator: new StructuredOutputValidator(),
+        promptBuilder: new DefaultPromptBuilder(),
+        verifyFinalAnswer: true,
+      });
+
+      const result = await loop.run({ sessionId: "v1", userMessage: "21+32?" });
+      expect(call).toBe(3);
+      expect(result.terminatedReason).toBe("final_answer");
+      expect(result.finalAnswer).toBe("53");
+    });
+
+    it("skips verification when no tools were used", async () => {
+      let call = 0;
+      const llm = adapterFromFn(async () => {
+        call++;
+        return { content: "ACTION: final_answer\nANSWER: Hello!" };
+      });
+      const loop = new DefaultAgentLoop({
+        llm,
+        memory: new InMemoryMemory(),
+        toolBridge: new DefaultToolBridge(),
+        validator: new StructuredOutputValidator(),
+        promptBuilder: new DefaultPromptBuilder(),
+        verifyFinalAnswer: true,
+      });
+
+      const result = await loop.run({ sessionId: "v2", userMessage: "hi" });
+      expect(call).toBe(1);
+      expect(result.finalAnswer).toBe("Hello!");
+    });
+  });
+
   it("caps recent context and folds older turns into a summary", async () => {
     const seen: ChatMessage[][] = [];
     const llm = adapterFromFn(async (messages) => {

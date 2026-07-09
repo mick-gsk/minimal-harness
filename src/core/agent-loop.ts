@@ -1,7 +1,7 @@
 import type { AgentLoop, AgentLoopInput, AgentLoopResult, AgentTurn } from "../types/agent.js";
 import type { Memory } from "../types/memory.js";
 import type { ToolBridge, ToolExecutionRecord } from "../types/tool.js";
-import type { LLMAdapter } from "../types/llm.js";
+import type { ChatMessage, LLMAdapter } from "../types/llm.js";
 import type { OutputValidator } from "../types/guardrails.js";
 import type { PromptBuilder } from "./prompt-builder.js";
 import { parseAssistantOutput } from "./output-parser.js";
@@ -34,6 +34,13 @@ export interface AgentLoopDeps {
    * final answer. Defaults to false (text protocol).
    */
   nativeToolCalling?: boolean;
+  /**
+   * When true and the run used at least one tool, a single extra LLM call
+   * asks the model to re-check its final answer against the tool results
+   * before it is returned. Catches mental-math slips at the cost of one
+   * additional call. Defaults to false.
+   */
+  verifyFinalAnswer?: boolean;
 }
 
 export class DefaultAgentLoop implements AgentLoop {
@@ -63,6 +70,30 @@ export class DefaultAgentLoop implements AgentLoop {
       logger.warn(`Tool call '${toolName}' rejected: ${error}`);
       return { toolName, arguments: args, error, executedAt: Date.now() };
     }
+  }
+
+  /**
+   * One extra LLM call asking the model to re-check its answer against the
+   * tool results already in the conversation. Returns the (possibly
+   * corrected) answer; on an unusable reply the original answer stands.
+   */
+  private async verifyAnswer(
+    messages: ChatMessage[],
+    assistantOutput: string,
+    candidate: string,
+  ): Promise<string> {
+    const prompt =
+      "Before finalizing: re-check your answer against the tool results in this conversation. " +
+      "If it is correct, repeat it; if not, reply with the corrected answer.";
+    const response = await this.deps.llm.generate([
+      ...messages,
+      { role: "assistant", content: assistantOutput },
+      { role: "user", content: prompt },
+    ]);
+    const parsed = parseAssistantOutput(response.content, this.deps.validator);
+    if (parsed.kind === "final") return parsed.finalText ?? candidate;
+    const plain = response.content.trim();
+    return plain.length > 0 && !plain.startsWith("ACTION:") ? plain : candidate;
   }
 
   async run(input: AgentLoopInput): Promise<AgentLoopResult> {
@@ -182,10 +213,14 @@ export class DefaultAgentLoop implements AgentLoop {
       // Native mode: no tool calls means the model is answering directly —
       // there is no text protocol to parse or retry.
       if (this.deps.nativeToolCalling) {
+        let finalAnswer = rawOutput;
+        if (this.deps.verifyFinalAnswer && toolTrace.length > 0) {
+          finalAnswer = await this.verifyAnswer(messages, rawOutput, rawOutput);
+        }
         sm.transition("FINAL_ANSWER"); // generating -> done
         rawTurns.push({ turnIndex: turn, rawAssistantOutput: rawOutput, toolCalls: [] });
         await memory.append(sessionId, { role: "assistant", content: rawOutput, timestamp: Date.now() });
-        return { sessionId, finalAnswer: rawOutput, toolTrace, rawTurns, terminatedReason: "final_answer", finalState: sm.current() };
+        return { sessionId, finalAnswer, toolTrace, rawTurns, terminatedReason: "final_answer", finalState: sm.current() };
       }
 
       // Retry loop for validation
@@ -208,10 +243,14 @@ export class DefaultAgentLoop implements AgentLoop {
       const agentTurn: AgentTurn = { turnIndex: turn, rawAssistantOutput: lastOutput, toolCalls: [] };
 
       if (parsed.kind === "final") {
+        let finalAnswer = parsed.finalText ?? "";
+        if (this.deps.verifyFinalAnswer && toolTrace.length > 0) {
+          finalAnswer = await this.verifyAnswer(messages, lastOutput, finalAnswer);
+        }
         sm.transition("FINAL_ANSWER"); // generating -> done
         rawTurns.push(agentTurn);
         await memory.append(sessionId, { role: "assistant", content: lastOutput, timestamp: Date.now() });
-        return { sessionId, finalAnswer: parsed.finalText ?? "", toolTrace, rawTurns, terminatedReason: "final_answer", finalState: sm.current() };
+        return { sessionId, finalAnswer, toolTrace, rawTurns, terminatedReason: "final_answer", finalState: sm.current() };
       }
 
       if (parsed.kind === "tool_call") {
