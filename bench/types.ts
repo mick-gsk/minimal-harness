@@ -56,7 +56,7 @@ export interface RunContext {
 
 /** One contestant in the ablation matrix (spec §4). */
 export interface HarnessAdapter {
-  name: "minimal" | "ollama-native" | "naive" | "smolagents-tool";
+  name: "minimal" | "ollama-native" | "naive" | "smolagents-tool" | "smolagents-code";
   run(
     task: BenchTask,
     llm: LLMAdapter,

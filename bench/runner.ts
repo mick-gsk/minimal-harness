@@ -12,7 +12,7 @@ import { devTasks } from "./tasks/dev.js";
 import { minimalHarness } from "./harnesses/minimal.js";
 import { ollamaNativeHarness } from "./harnesses/ollama-native.js";
 import { naiveHarness } from "./harnesses/naive.js";
-import { smolagentsToolHarness, smolagentsAvailable } from "./harnesses/smolagents.js";
+import { smolagentsToolHarness, smolagentsCodeHarness, smolagentsAvailable } from "./harnesses/smolagents.js";
 import { runMatrix } from "./run-matrix.js";
 import { buildReport } from "./reporter.js";
 import type { ModelConfig } from "./types.js";
@@ -65,18 +65,26 @@ for (const name of modelNames) {
 const models: ModelConfig[] = modelNames.map((name) => ({ name, baseUrl, temperature: TEMPERATURE }));
 
 // smolagents is an optional out-of-process contestant: only zugeschaltet via
-// BENCH_SMOLAGENTS=1, so the normal bench stays free of any Python dependency.
+// BENCH_SMOLAGENTS, so the normal bench stays free of any Python dependency.
+// "1" = both variants; "tool" = ToolCallingAgent only; "code" = CodeAgent only
+// (HF's recommended default and the library's actual thesis).
+const smolagentsMode = process.env.BENCH_SMOLAGENTS;
 const harnesses = [ollamaNativeHarness, naiveHarness, minimalHarness];
-if (process.env.BENCH_SMOLAGENTS === "1") {
+if (smolagentsMode) {
+  if (!["1", "tool", "code"].includes(smolagentsMode)) {
+    console.error(`✗ Unbekannter BENCH_SMOLAGENTS-Wert '${smolagentsMode}' — erlaubt: 1, tool, code`);
+    process.exit(1);
+  }
   if (!smolagentsAvailable()) {
     console.error(
-      "✗ BENCH_SMOLAGENTS=1, aber Python-venv/Sidecar fehlt — einrichten:\n" +
+      "✗ BENCH_SMOLAGENTS gesetzt, aber Python-venv/Sidecar fehlt — einrichten:\n" +
         "  python3 -m venv bench/smolagents/.venv && \\\n" +
         "  bench/smolagents/.venv/bin/pip install -r bench/smolagents/requirements.txt",
     );
     process.exit(1);
   }
-  harnesses.push(smolagentsToolHarness);
+  if (smolagentsMode !== "code") harnesses.push(smolagentsToolHarness);
+  if (smolagentsMode !== "tool") harnesses.push(smolagentsCodeHarness);
 }
 
 console.log(

@@ -74,55 +74,70 @@ function runSidecar(jobJson: string, maxTurns: number): Promise<SidecarResult> {
   });
 }
 
+function makeSmolagentsHarness(
+  name: "smolagents-tool" | "smolagents-code",
+  agentType: "tool" | "code",
+): HarnessAdapter {
+  return {
+    name,
+    async run(
+      task: BenchTask,
+      _llm: LLMAdapter,
+      tools: ToolDefinition[],
+      ctx: RunContext,
+    ): Promise<BenchRunResult> {
+      const bridge = await startWorldBridge(tools);
+      try {
+        const apiBase = `${ctx.model.baseUrl.replace(/\/$/, "")}/v1`;
+        const job = {
+          prompt: task.prompt,
+          maxSteps: task.maxTurns,
+          bridgeUrl: bridge.url,
+          agentType,
+          model: {
+            id: ctx.model.name,
+            apiBase,
+            apiKey: "ollama",
+            temperature: ctx.model.temperature,
+            seed: ctx.seed,
+          },
+          tools: tools.map((t) => ({
+            name: t.name,
+            description: t.description,
+            inputSchema: t.inputSchema,
+          })),
+        };
+        const res = await runSidecar(JSON.stringify(job), task.maxTurns);
+        const out: BenchRunResult = {
+          finalAnswer: res.error ? null : res.finalAnswer,
+          terminatedReason: res.error ? "error" : res.terminatedReason,
+          turns: res.steps,
+          llmCalls: res.steps, // proxy: ~one model call per step (no planning interval)
+          tokens: res.tokens,
+          latencyMs: 0, // filled by runner (wall-clock incl. python boot)
+          toolCallCount: res.toolCalls,
+          agentMs: res.agentMs,
+        };
+        if (res.error) out.error = res.error;
+        return out;
+      } finally {
+        await bridge.close();
+      }
+    },
+  };
+}
+
 /**
  * Contestant: Hugging Face smolagents `ToolCallingAgent` (JSON tool calls —
  * apples-to-apples with minimal-harness). Runs as a Python sidecar; its tools
  * are HTTP wrappers over the Node WorldState bridge, so `check()` scores the one
  * real world. smolagents keeps its OWN system prompt/scaffold (that's the rival).
  */
-export const smolagentsToolHarness: HarnessAdapter = {
-  name: "smolagents-tool",
-  async run(
-    task: BenchTask,
-    _llm: LLMAdapter,
-    tools: ToolDefinition[],
-    ctx: RunContext,
-  ): Promise<BenchRunResult> {
-    const bridge = await startWorldBridge(tools);
-    try {
-      const apiBase = `${ctx.model.baseUrl.replace(/\/$/, "")}/v1`;
-      const job = {
-        prompt: task.prompt,
-        maxSteps: task.maxTurns,
-        bridgeUrl: bridge.url,
-        model: {
-          id: ctx.model.name,
-          apiBase,
-          apiKey: "ollama",
-          temperature: ctx.model.temperature,
-          seed: ctx.seed,
-        },
-        tools: tools.map((t) => ({
-          name: t.name,
-          description: t.description,
-          inputSchema: t.inputSchema,
-        })),
-      };
-      const res = await runSidecar(JSON.stringify(job), task.maxTurns);
-      const out: BenchRunResult = {
-        finalAnswer: res.error ? null : res.finalAnswer,
-        terminatedReason: res.error ? "error" : res.terminatedReason,
-        turns: res.steps,
-        llmCalls: res.steps, // proxy: ~one model call per step (no planning interval)
-        tokens: res.tokens,
-        latencyMs: 0, // filled by runner (wall-clock incl. python boot)
-        toolCallCount: res.toolCalls,
-        agentMs: res.agentMs,
-      };
-      if (res.error) out.error = res.error;
-      return out;
-    } finally {
-      await bridge.close();
-    }
-  },
-};
+export const smolagentsToolHarness = makeSmolagentsHarness("smolagents-tool", "tool");
+
+/**
+ * Contestant: smolagents `CodeAgent` — HF's recommended default and the
+ * library's actual thesis (actions as Python code instead of JSON tool calls).
+ * Same sidecar/bridge; only the agent class differs.
+ */
+export const smolagentsCodeHarness = makeSmolagentsHarness("smolagents-code", "code");

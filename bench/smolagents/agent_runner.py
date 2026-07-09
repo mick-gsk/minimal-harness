@@ -9,9 +9,12 @@ All library / rich / log output is redirected to stderr (fd-level) so stdout
 carries only the result line — robust against smolagents' console output.
 
 Job schema (from bench/harnesses/smolagents.ts):
-  { prompt, maxSteps, bridgeUrl,
+  { prompt, maxSteps, bridgeUrl, agentType: "tool" | "code",
     model: { id, apiBase, apiKey, temperature, seed },
     tools: [ { name, description, inputSchema } ] }
+
+agentType "tool" (default) runs ToolCallingAgent (JSON tool calls);
+"code" runs CodeAgent — HF's recommended default (actions as Python code).
 Result schema:
   { finalAnswer, terminatedReason, toolCalls, tokens, steps, agentMs, error }
 """
@@ -113,7 +116,7 @@ def main() -> None:
     }
     counter = {"n": 0}
     try:
-        from smolagents import ToolCallingAgent, OpenAIServerModel
+        from smolagents import CodeAgent, ToolCallingAgent, OpenAIServerModel
 
         m = job["model"]
         model_kwargs = {"temperature": m.get("temperature", 0.7)}
@@ -126,7 +129,8 @@ def main() -> None:
             **model_kwargs,
         )
         tools = build_tools(job["tools"], job["bridgeUrl"], counter)
-        agent = ToolCallingAgent(tools=tools, model=model, verbosity_level=0)
+        agent_cls = CodeAgent if job.get("agentType") == "code" else ToolCallingAgent
+        agent = agent_cls(tools=tools, model=model, verbosity_level=0)
 
         t0 = time.time()
         answer = agent.run(job["prompt"], max_steps=max_steps)
