@@ -25,6 +25,11 @@
   was Retry/Recovery beitragen. (Abweichungs-Notiz in [bench/types.ts](bench/types.ts).)
 - `[idee]` **Multi-Modell-Ablation** — Matrix über mehrere Ollama-Modelle statt nur `qwen3:8b`,
   um zu zeigen, dass der Harness-Uplift modellübergreifend hält.
+- `[frage]` **`naive`-Adapter rechtfertigen oder streichen** (Prinzip: „question every requirement").
+  Trägt er genug Signal über `ollama-native` hinaus, um Wartung + Testfläche zu rechtfertigen?
+  Bewusst entscheiden, nicht „drei ist eine schöne Matrix" hinnehmen.
+- `[später]` **Fail-fast-Lauf:** dev-Suite früh auf dem GPU-PC durch die zwei fertigen Adapter jagen,
+  BEVOR alle 10 Frozen-Tasks stehen — echte Zahlen sollen das Design formen (Prinzip 6 in CLAUDE.md).
 
 ## Benchmark-Integration — Recherche 2026-07-09 (wertvoll, nicht dringend)
 
