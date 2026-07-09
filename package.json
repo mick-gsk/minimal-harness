@@ -1,7 +1,7 @@
 {
   "name": "minimal-harness",
   "version": "0.1.0",
-  "description": "Schlankes, framework-agnostisches Agent-Harness für lokale LLMs (Ollama-first)",
+  "description": "A lean, framework-agnostic Agent Harness for local LLMs (Ollama-first)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
