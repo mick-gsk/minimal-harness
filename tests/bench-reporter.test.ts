@@ -49,6 +49,20 @@ describe("buildReport", () => {
     expect(md).toContain("kein signifikanter Unterschied");
   });
 
+  it("claims significance when confidence intervals are disjoint", () => {
+    const records: RunRecord[] = [];
+    for (let t = 0; t < 10; t++) {
+      for (const seed of [1, 2]) {
+        records.push(rec("minimal", `t${t}`, seed, true));
+        records.push(rec("ollama-native", `t${t}`, seed, t < 1)); // only task t0 passes → 2/20
+      }
+    }
+    const md = buildReport(records, meta);
+    expect(md).toContain("signifikant (Konfidenzintervalle disjunkt)");
+    expect(md).toMatch(/\+90\.0 pp/);
+    expect(md).not.toContain("kein signifikanter Unterschied");
+  });
+
   it("marks the naive baseline as illustrative", () => {
     const records: RunRecord[] = [
       rec("minimal", "a", 1, true),
