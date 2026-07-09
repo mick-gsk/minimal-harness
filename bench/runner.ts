@@ -1,11 +1,13 @@
 /**
  * Bench CLI (spec §5): npm run bench
- * Env: BENCH_MODELS="qwen3:8b,llama3.1:8b" OLLAMA_BASE_URL=... BENCH_SUITE=dev
+ * Env: BENCH_MODELS="qwen3:8b,llama3.1:8b" OLLAMA_BASE_URL=...
+ *      BENCH_SUITE=dev (Tuning, stdout only) | v1 (legacy frozen) | default: suite-v2
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { OllamaClient } from "../src/index.js";
 import { DEFAULT_BASE_URL, DEFAULT_MODELS, SEEDS, TEMPERATURE } from "./config.js";
 import { suiteV1, SUITE_VERSION } from "./tasks/frozen/suite-v1.js";
+import { suiteV2, SUITE_V2_VERSION } from "./tasks/frozen/suite-v2.js";
 import { devTasks } from "./tasks/dev.js";
 import { minimalHarness } from "./harnesses/minimal.js";
 import { ollamaNativeHarness } from "./harnesses/ollama-native.js";
@@ -19,9 +21,10 @@ const modelNames = (process.env.BENCH_MODELS ?? DEFAULT_MODELS.join(","))
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
-const useDev = process.env.BENCH_SUITE === "dev";
-const tasks = useDev ? devTasks : suiteV1;
-const suiteLabel = useDev ? "dev (NICHT reportfähig)" : SUITE_VERSION;
+const suiteEnv = process.env.BENCH_SUITE ?? "v2";
+const useDev = suiteEnv === "dev";
+const tasks = useDev ? devTasks : suiteEnv === "v1" ? suiteV1 : suiteV2;
+const suiteLabel = useDev ? "dev (NICHT reportfähig)" : suiteEnv === "v1" ? SUITE_VERSION : SUITE_V2_VERSION;
 
 // Preflight: Ollama reachable? Models present?
 const tagsRes = await fetch(`${baseUrl}/api/tags`).catch(() => null);

@@ -1,7 +1,13 @@
 import type { ToolDefinition, LLMAdapter } from "../src/index.js";
 import type { WorldState } from "./world.js";
 
-export type TaskCategory = "single-tool" | "multi-step" | "world-state" | "no-tool";
+export type TaskCategory =
+  | "single-tool"
+  | "multi-step"
+  | "world-state"
+  | "no-tool"
+  | "error-recovery"
+  | "multi-tool";
 
 /** One deterministically scorable benchmark task (spec §4.1). */
 export interface BenchTask {

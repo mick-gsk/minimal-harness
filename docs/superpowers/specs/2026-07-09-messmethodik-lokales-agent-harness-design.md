@@ -152,6 +152,8 @@ Zwei Angriffsflächen, die den ganzen Nachweis entwerten würden, wenn wir sie i
 **b) Overfitting auf die eigene Suite:** Wer das Harness gegen dieselben Tasks tunt, die er reportet, misst am Ende Auswendiglernen. Deshalb:
 - Die Suite wird in **`dev/`** (zum Entwickeln/Tunen des Harness erlaubt) und **`frozen/`** (nur für Reports, niemals zum Debuggen einzelner Fails) geteilt.
 - `frozen/` wird versioniert eingefroren (`suite-v1`, `suite-v2`, …); neue Tasks kommen nur per Versions-Bump dazu, und der Report nennt die Suite-Version.
+
+**suite-v2 (beschlossen 2026-07-09, nach den ersten suite-v1-Ergebnissen):** 50 Tasks in 6 Kategorien — die vier bestehenden plus **error-recovery** (Tools mit transienten Fehlern beim 1.–2. Aufruf; misst, ob Fehler-Feedback zu erfolgreichem Retry führt) und **multi-tool** (kv + Calculator kombiniert; misst Tool-Auswahl und Werte-Weitergabe zwischen Tools). Check-Härtungen gegenüber v1: dezimal-sichere Zahlen-Regex (Lookbehind/Lookahead auf Ziffern, `.`, `,` statt `\b`), Ergebniswerte so gewählt, dass sie nicht in den Eingaben vorkommen, Case-Anforderungen stehen explizit im Prompt. suite-v1 bleibt unverändert erhalten (Vergleichbarkeit alter Reports); der Runner reportet ab v2 standardmäßig suite-v2 (`BENCH_SUITE=v1` wählt die alte).
 - Ebene A (externe Benchmarks) bleibt der ultimative Overfitting-Check, da wir deren Tasks nicht kontrollieren.
 
 ---
