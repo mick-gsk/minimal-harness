@@ -38,6 +38,26 @@ export class DefaultAgentLoop implements AgentLoop {
     this.maxContextMessages = deps.maxContextMessages ?? 20;
   }
 
+  /**
+   * Executes a tool call and converts bridge-level failures (unknown tool,
+   * schema validation) into an error record instead of letting them escape.
+   * The error record flows back to the model as a tool message, giving it a
+   * chance to correct itself — a single hallucinated argument must not kill
+   * the whole session. Policy violations still throw (guardrail semantics).
+   */
+  private async executeToolSafely(
+    toolName: string,
+    args: unknown,
+  ): Promise<ToolExecutionRecord> {
+    try {
+      return await this.deps.toolBridge.execute({ toolName, arguments: args });
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      logger.warn(`Tool call '${toolName}' rejected: ${error}`);
+      return { toolName, arguments: args, error, executedAt: Date.now() };
+    }
+  }
+
   async run(input: AgentLoopInput): Promise<AgentLoopResult> {
     const { sessionId, userMessage, maxTurns = 10 } = input;
     const { llm, memory, toolBridge, validator, promptBuilder } = this.deps;
@@ -112,7 +132,7 @@ export class DefaultAgentLoop implements AgentLoop {
             throw new AgentError(`Tool '${call.name}' is not allowed by policy`);
           }
           logger.debug(`[turn ${turn}] Executing tool (native): ${call.name}`);
-          const record = await toolBridge.execute({ toolName: call.name, arguments: call.arguments });
+          const record = await this.executeToolSafely(call.name, call.arguments);
           toolTrace.push(record);
           agentTurn.toolCalls.push(record);
           await memory.append(sessionId, {
@@ -162,7 +182,7 @@ export class DefaultAgentLoop implements AgentLoop {
         }
 
         logger.debug(`[turn ${turn}] Executing tool: ${toolName}`);
-        const record = await toolBridge.execute({ toolName, arguments: parsed.toolArguments });
+        const record = await this.executeToolSafely(toolName, parsed.toolArguments);
         toolTrace.push(record);
         agentTurn.toolCalls.push(record);
         rawTurns.push(agentTurn);

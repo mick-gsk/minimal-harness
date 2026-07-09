@@ -56,6 +56,57 @@ describe("DefaultAgentLoop", () => {
     expect(result.terminatedReason).toBe("max_turns");
   });
 
+  it("feeds tool validation errors back to the model instead of crashing (native path)", async () => {
+    // Regression: bench run 2026-07-09 — llama3.1 hallucinated an argument for a
+    // no-parameter tool; ToolValidationError killed the whole session while the
+    // primitive baselines recovered. The loop must return the error as a tool
+    // message so the model gets a chance to correct itself.
+    let call = 0;
+    const llm = adapterFromFn(async (messages: ChatMessage[]) => {
+      call++;
+      if (call === 1) {
+        // invalid: calculator.evaluate requires "expression", model hallucinates "expr"
+        return { content: "", toolCalls: [{ name: "calculator.evaluate", arguments: { expr: "6*7" } }] };
+      }
+      if (call === 2) {
+        // the error must have been fed back as a tool message
+        const lastTool = [...messages].reverse().find((m) => m.role === "tool");
+        expect(lastTool?.content ?? "").toMatch(/validation|failed|error/i);
+        return { content: "", toolCalls: [{ name: "calculator.evaluate", arguments: { expression: "6*7" } }] };
+      }
+      return { content: "ACTION: final_answer\nANSWER: 42" };
+    });
+    const toolBridge = new DefaultToolBridge();
+    toolBridge.register(calculatorTool);
+    const loop = new DefaultAgentLoop({
+      llm,
+      memory: new InMemoryMemory(),
+      toolBridge,
+      validator: new StructuredOutputValidator(),
+      promptBuilder: new DefaultPromptBuilder(),
+    });
+
+    const result = await loop.run({ sessionId: "val-err", userMessage: "6*7?" });
+    expect(result.terminatedReason).toBe("final_answer");
+    expect(result.finalAnswer).toBe("42");
+    expect(result.toolTrace).toHaveLength(2);
+    expect(result.toolTrace[0]!.error).toMatch(/validation/i);
+    expect(result.toolTrace[1]!.output).toEqual({ expression: "6*7", result: 42 });
+  });
+
+  it("feeds unknown-tool errors back to the model instead of crashing (text path)", async () => {
+    const loop = makeDeps([
+      `ACTION: tool_call\nTOOL: does.not.exist\nARGS: {}`,
+      `ACTION: tool_call\nTOOL: calculator.evaluate\nARGS: {"expression":"2+2"}`,
+      "ACTION: final_answer\nANSWER: 4",
+    ]);
+    const result = await loop.run({ sessionId: "unknown-tool", userMessage: "2+2?" });
+    expect(result.terminatedReason).toBe("final_answer");
+    expect(result.finalAnswer).toBe("4");
+    expect(result.toolTrace).toHaveLength(2);
+    expect(result.toolTrace[0]!.error).toMatch(/not.*(found|registered)|unknown/i);
+  });
+
   it("uses native tool_calls from the adapter instead of text parsing", async () => {
     let call = 0;
     const llm = adapterFromFn(async () => {
