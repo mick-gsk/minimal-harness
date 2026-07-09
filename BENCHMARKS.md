@@ -6,9 +6,10 @@
 
 | Harness | Erfolgsrate | 95 %-CI | pass^5 | Ø Tokens | Ø Latenz |
 |---|---|---|---|---|---|
-| ollama-native | 90.0% (45/50) | [78.6%, 95.7%] | 90.0% | 1202 | 7748 ms |
-| naive | 66.0% (33/50) | [52.2%, 77.6%] | 60.0% | 692 | 5027 ms |
-| minimal | 98.0% (49/50) | [89.5%, 99.6%] | 90.0% | 1719 | 10368 ms |
+| ollama-native | 90.0% (45/50) | [78.6%, 95.7%] | 90.0% | 1181 | 12828 ms |
+| naive | 68.0% (34/50) | [54.2%, 79.2%] | 60.0% | 740 | 5959 ms |
+| minimal | 98.0% (49/50) | [89.5%, 99.6%] | 90.0% | 1612 | 35122 ms |
+| smolagents-tool | 0.0% (0/50) | [0.0%, 7.1%] | 0.0% | 0 | 21 ms |
 
 Harness-Uplift (minimal vs. ollama-native): +8.0 pp — **kein signifikanter Unterschied** (Konfidenzintervalle überlappen; mehr Tasks/Läufe nötig).
 
@@ -16,8 +17,9 @@ Harness-Uplift (minimal vs. ollama-native): +8.0 pp — **kein signifikanter Unt
 
 | Harness | Erfolgsrate | 95 %-CI | pass^5 | Ø Tokens | Ø Latenz |
 |---|---|---|---|---|---|
-| ollama-native | 74.0% (37/50) | [60.4%, 84.1%] | 60.0% | 431 | 944 ms |
-| naive | 24.0% (12/50) | [14.3%, 37.4%] | 20.0% | 239 | 574 ms |
-| minimal | 82.0% (41/50) | [69.2%, 90.2%] | 80.0% | 834 | 949 ms |
+| ollama-native | 72.0% (36/50) | [58.3%, 82.5%] | 70.0% | 434 | 902 ms |
+| naive | 24.0% (12/50) | [14.3%, 37.4%] | 20.0% | 239 | 437 ms |
+| minimal | 82.0% (41/50) | [69.2%, 90.2%] | 80.0% | 834 | 754 ms |
+| smolagents-tool | 0.0% (0/50) | [0.0%, 7.1%] | 0.0% | 0 | 21 ms |
 
-Harness-Uplift (minimal vs. ollama-native): +8.0 pp — **kein signifikanter Unterschied** (Konfidenzintervalle überlappen; mehr Tasks/Läufe nötig).
+Harness-Uplift (minimal vs. ollama-native): +10.0 pp — **kein signifikanter Unterschied** (Konfidenzintervalle überlappen; mehr Tasks/Läufe nötig).
