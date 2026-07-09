@@ -239,6 +239,51 @@ describe("DefaultAgentLoop", () => {
     expect(result.toolTrace[2]!.output).toEqual({ expression: "2+2", result: 4 });
   });
 
+  describe("nativeToolCalling mode", () => {
+    // Rationale: bench probe 2026-07-09 — models with native function calling
+    // pay +40-100% tokens for a text protocol block they never use. In native
+    // mode the tool specs travel via the API and plain content is the answer.
+    function makeNativeLoop(llm: ReturnType<typeof adapterFromFn>) {
+      const toolBridge = new DefaultToolBridge();
+      toolBridge.register(calculatorTool);
+      return new DefaultAgentLoop({
+        llm,
+        memory: new InMemoryMemory(),
+        toolBridge,
+        validator: new StructuredOutputValidator(),
+        promptBuilder: new DefaultPromptBuilder(),
+        nativeToolCalling: true,
+      });
+    }
+
+    it("omits the text protocol block from the prompt", async () => {
+      const seen: ChatMessage[][] = [];
+      const llm = adapterFromFn(async (messages: ChatMessage[]) => {
+        seen.push(messages);
+        return { content: "hi there" };
+      });
+      await makeNativeLoop(llm).run({ sessionId: "n1", userMessage: "hi" });
+      const system = seen[0]!.find((m) => m.role === "system")!;
+      expect(system.content).not.toContain("ACTION:");
+      expect(system.content).not.toContain("Available Tools");
+    });
+
+    it("treats plain content without tool calls as the final answer", async () => {
+      let call = 0;
+      const llm = adapterFromFn(async () => {
+        call++;
+        if (call === 1) {
+          return { content: "", toolCalls: [{ name: "calculator.evaluate", arguments: { expression: "6*7" } }] };
+        }
+        return { content: "The answer is 42." };
+      });
+      const result = await makeNativeLoop(llm).run({ sessionId: "n2", userMessage: "6*7?" });
+      expect(result.terminatedReason).toBe("final_answer");
+      expect(result.finalAnswer).toBe("The answer is 42.");
+      expect(result.toolTrace).toHaveLength(1);
+    });
+  });
+
   it("caps recent context and folds older turns into a summary", async () => {
     const seen: ChatMessage[][] = [];
     const llm = adapterFromFn(async (messages) => {

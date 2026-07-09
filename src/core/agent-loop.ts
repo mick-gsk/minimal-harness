@@ -27,6 +27,13 @@ export interface AgentLoopDeps {
    * bound. Defaults to 20.
    */
   maxContextMessages?: number;
+  /**
+   * Set to true when the backend supports native function calling: the text
+   * protocol block (ACTION/TOOL/ARGS) is omitted from the prompt — tool specs
+   * already travel via the API — and plain content without tool calls is the
+   * final answer. Defaults to false (text protocol).
+   */
+  nativeToolCalling?: boolean;
 }
 
 export class DefaultAgentLoop implements AgentLoop {
@@ -99,9 +106,11 @@ export class DefaultAgentLoop implements AgentLoop {
 
       const messages = promptBuilder.build({
         systemInstruction,
-        toolDescriptions: toolBridge.list().map(
-          (t) => `- **${t.name}**: ${t.description}`,
-        ),
+        // In native mode the tool specs travel via the API; the text protocol
+        // block would only burn tokens the model never uses.
+        toolDescriptions: this.deps.nativeToolCalling
+          ? []
+          : toolBridge.list().map((t) => `- **${t.name}**: ${t.description}`),
         ...(memorySummary ? { memorySummary } : {}),
         recentMessages,
       });
@@ -168,6 +177,15 @@ export class DefaultAgentLoop implements AgentLoop {
         rawTurns.push(agentTurn);
         sm.transition("TOOL_DONE"); // executing_tool -> generating
         continue;
+      }
+
+      // Native mode: no tool calls means the model is answering directly —
+      // there is no text protocol to parse or retry.
+      if (this.deps.nativeToolCalling) {
+        sm.transition("FINAL_ANSWER"); // generating -> done
+        rawTurns.push({ turnIndex: turn, rawAssistantOutput: rawOutput, toolCalls: [] });
+        await memory.append(sessionId, { role: "assistant", content: rawOutput, timestamp: Date.now() });
+        return { sessionId, finalAnswer: rawOutput, toolTrace, rawTurns, terminatedReason: "final_answer", finalState: sm.current() };
       }
 
       // Retry loop for validation
