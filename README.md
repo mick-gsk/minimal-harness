@@ -128,6 +128,26 @@ Tests use Jest with a mock LLM adapter — no running Ollama instance required.
 
 ---
 
+## Benchmarks
+
+The ablation matrix measures the **harness uplift**: the same local model,
+same tasks, run through `ollama-native` (fair out-of-the-box baseline),
+`naive` (illustrative: no retry/recovery) and `minimal` (this harness).
+
+```bash
+# requires a running Ollama with the target models pulled
+npm run bench                      # frozen suite → writes BENCHMARKS.md
+BENCH_MODELS="qwen3:8b" npm run bench
+BENCH_SUITE=dev npm run bench      # dev suite for tuning, report to stdout only
+```
+
+Runs are reproducible: pinned seeds (1001–1005), temperature 0.7, k=5 runs
+per task. Success rates come with 95% Wilson confidence intervals; an uplift
+is only claimed when the intervals are disjoint. See
+`docs/superpowers/specs/2026-07-09-messmethodik-lokales-agent-harness-design.md`.
+
+---
+
 ## v1 Limitations
 
 - Memory is in-process only (no persistence across restarts)
