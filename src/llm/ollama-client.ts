@@ -19,6 +19,7 @@ interface OllamaChatRequest {
   stream: boolean;
   options: { temperature: number; num_predict?: number; stop?: string[]; seed?: number };
   tools?: OllamaFunctionSpec[];
+  think?: boolean;
 }
 
 interface OllamaToolCall {
@@ -36,6 +37,7 @@ export class OllamaClient implements LLMAdapter {
   async generate(messages: ChatMessage[], options?: LLMGenerateOptions): Promise<LLMResponse> {
     const numPredict = options?.maxTokens ?? this.config.defaultMaxTokens;
     const seed = options?.seed ?? this.config.defaultSeed;
+    const think = options?.think ?? this.config.think;
     const streaming = typeof options?.onToken === "function";
     const body: OllamaChatRequest = {
       model: this.config.model,
@@ -47,6 +49,7 @@ export class OllamaClient implements LLMAdapter {
         ...(options?.stop !== undefined ? { stop: options.stop } : {}),
         ...(seed !== undefined ? { seed } : {}),
       },
+      ...(think !== undefined ? { think } : {}),
       ...(options?.tools && options.tools.length > 0
         ? {
             tools: options.tools.map((t) => ({

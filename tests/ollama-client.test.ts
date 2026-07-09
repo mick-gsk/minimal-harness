@@ -105,6 +105,56 @@ describe("OllamaClient", () => {
     globalThis.fetch = originalFetch;
   });
 
+  describe("think toggle", () => {
+    // Rationale: bench 2026-07-09 — qwen3:8b averages 42s/run with thinking
+    // enabled vs ~5s without; users need this as a plain config switch.
+    function captureFetch(calls: unknown[]) {
+      return async (_url: unknown, init?: RequestInit) => {
+        calls.push(JSON.parse(String(init?.body)));
+        return new Response(
+          JSON.stringify({ message: { role: "assistant", content: "ok" }, model: "m" }),
+          { status: 200 },
+        );
+      };
+    }
+
+    it("sends top-level think from config", async () => {
+      const originalFetch = globalThis.fetch;
+      const calls: unknown[] = [];
+      globalThis.fetch = captureFetch(calls) as typeof fetch;
+
+      const client = new OllamaClient({ baseUrl: "http://x", model: "m", think: false });
+      await client.generate([{ role: "user", content: "hi" }]);
+      expect((calls[0] as { think?: boolean }).think).toBe(false);
+
+      globalThis.fetch = originalFetch;
+    });
+
+    it("per-call think overrides config", async () => {
+      const originalFetch = globalThis.fetch;
+      const calls: unknown[] = [];
+      globalThis.fetch = captureFetch(calls) as typeof fetch;
+
+      const client = new OllamaClient({ baseUrl: "http://x", model: "m", think: false });
+      await client.generate([{ role: "user", content: "hi" }], { think: true });
+      expect((calls[0] as { think?: boolean }).think).toBe(true);
+
+      globalThis.fetch = originalFetch;
+    });
+
+    it("omits think when not configured", async () => {
+      const originalFetch = globalThis.fetch;
+      const calls: unknown[] = [];
+      globalThis.fetch = captureFetch(calls) as typeof fetch;
+
+      const client = new OllamaClient({ baseUrl: "http://x", model: "m" });
+      await client.generate([{ role: "user", content: "hi" }]);
+      expect("think" in (calls[0] as object)).toBe(false);
+
+      globalThis.fetch = originalFetch;
+    });
+  });
+
   describe("seed support", () => {
     it("sends options.seed from config.defaultSeed", async () => {
       const originalFetch = globalThis.fetch;

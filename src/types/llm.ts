@@ -25,6 +25,8 @@ export interface LLMGenerateOptions {
   seed?: number;
   /** Tool specs offered to backends that support native function calling. */
   tools?: LLMToolSpec[];
+  /** Toggles extended thinking on backends/models that support it. */
+  think?: boolean;
   /** Called with each incremental content chunk when the backend streams. */
   onToken?: (chunk: string) => void;
 }
