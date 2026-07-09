@@ -5,3 +5,5 @@ dist/
 .DS_Store
 coverage/
 bench/results/
+bench/smolagents/.venv/
+bench/smolagents/__pycache__/

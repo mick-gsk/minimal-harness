@@ -35,13 +35,34 @@ export interface BenchRunResult {
   tokens: number;
   latencyMs: number;
   toolCallCount: number;
+  /**
+   * Out-of-process contestants (e.g. smolagents) report their own pure agent
+   * time here; latencyMs then includes process boot and is not 1:1 comparable
+   * to the in-process TS harnesses. Undefined for in-process harnesses.
+   */
+  agentMs?: number;
   error?: string;
+}
+
+/**
+ * Per-run context passed to a harness alongside the in-process llm. Out-of-process
+ * contestants (smolagents) need the model *coordinates* (name/baseUrl/seed/temperature)
+ * to reach Ollama themselves; the in-process TS harnesses ignore it.
+ */
+export interface RunContext {
+  model: ModelConfig;
+  seed: number;
 }
 
 /** One contestant in the ablation matrix (spec §4). */
 export interface HarnessAdapter {
-  name: "minimal" | "ollama-native" | "naive";
-  run(task: BenchTask, llm: LLMAdapter, tools: ToolDefinition[]): Promise<BenchRunResult>;
+  name: "minimal" | "ollama-native" | "naive" | "smolagents-tool";
+  run(
+    task: BenchTask,
+    llm: LLMAdapter,
+    tools: ToolDefinition[],
+    ctx: RunContext,
+  ): Promise<BenchRunResult>;
 }
 
 export interface ModelConfig {

@@ -40,10 +40,13 @@ export async function runMatrix(opts: RunMatrixOptions): Promise<RunRecord[]> {
           const llm = withTelemetry(llmFactory(model, seed));
 
           const t0 = Date.now();
-          const result = await harness.run(task, llm, tools);
+          const result = await harness.run(task, llm, tools, { model, seed });
           result.latencyMs = Date.now() - t0;
-          result.llmCalls = llm.stats.llmCalls;
-          result.tokens = llm.stats.tokens;
+          // Fallback semantics: out-of-process contestants (smolagents) don't use
+          // the in-process llm, so they report their own counts. Only fill from the
+          // telemetry decorator when the adapter left them at 0 (in-process harnesses do).
+          if (!result.llmCalls) result.llmCalls = llm.stats.llmCalls;
+          if (!result.tokens) result.tokens = llm.stats.tokens;
 
           let success = false;
           try {

@@ -1,0 +1,6 @@
+# Bench-only Python deps for the smolagents contestant (installed into
+# bench/smolagents/.venv). This is NOT part of the harness core — src/ stays
+# dependency-free (`dependencies: {}` in package.json). Only the ablation
+# benchmark pulls these in, and only when BENCH_SMOLAGENTS=1.
+smolagents==1.26.0
+openai>=1.0
