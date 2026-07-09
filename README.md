@@ -134,6 +134,10 @@ The ablation matrix measures the **harness uplift**: the same local model,
 same tasks, run through `ollama-native` (fair out-of-the-box baseline),
 `naive` (illustrative: no retry/recovery) and `minimal` (this harness).
 
+An interactive **[benchmark dashboard](docs/benchmark-dashboard.html)** renders these
+results (success rate, 95% Wilson CIs, methodology) as a self-contained page — open it
+in a browser, or serve `docs/` via GitHub Pages for a shareable link.
+
 ```bash
 # requires a running Ollama with the target models pulled
 npm run bench                      # frozen suite → writes BENCHMARKS.md
