@@ -115,7 +115,8 @@ export class DefaultAgentLoop implements AgentLoop {
       if (llmResponse.toolCalls && llmResponse.toolCalls.length > 0) {
         const limit = this.policy.maxToolCallsPerTurn;
         const accepted = llmResponse.toolCalls.slice(0, Math.max(0, limit));
-        if (llmResponse.toolCalls.length > accepted.length) {
+        const dropped = llmResponse.toolCalls.slice(accepted.length);
+        if (dropped.length > 0) {
           logger.warn(
             `[turn ${turn}] ${llmResponse.toolCalls.length} tool calls requested, ` +
               `capping to policy limit ${limit}`,
@@ -138,6 +139,28 @@ export class DefaultAgentLoop implements AgentLoop {
           await memory.append(sessionId, {
             role: "tool",
             content: JSON.stringify({ tool: call.name, result: record.output ?? record.error }),
+            timestamp: Date.now(),
+          });
+        }
+
+        // A dropped call was never executed; staying silent makes the model
+        // believe it ran (phantom success). Report each one back so it can
+        // re-issue the call once it has seen the previous result.
+        for (const call of dropped) {
+          const error =
+            `not executed: only ${limit} tool call(s) per turn are allowed. ` +
+            `Issue this call again in your next turn, after you have seen the previous result.`;
+          const record: ToolExecutionRecord = {
+            toolName: call.name,
+            arguments: call.arguments,
+            error,
+            executedAt: Date.now(),
+          };
+          toolTrace.push(record);
+          agentTurn.toolCalls.push(record);
+          await memory.append(sessionId, {
+            role: "tool",
+            content: JSON.stringify({ tool: call.name, result: error }),
             timestamp: Date.now(),
           });
         }

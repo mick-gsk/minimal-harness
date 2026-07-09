@@ -164,7 +164,7 @@ describe("DefaultAgentLoop", () => {
     expect(result.toolTrace[1]!.output).toEqual({ expression: "2+2", result: 4 });
   });
 
-  it("caps native tool calls to the per-turn policy limit", async () => {
+  it("caps native tool calls to the per-turn policy limit and records the drop", async () => {
     let call = 0;
     const llm = adapterFromFn(async () => {
       call++;
@@ -191,7 +191,52 @@ describe("DefaultAgentLoop", () => {
     });
 
     const result = await loop.run({ sessionId: "cap", userMessage: "1+1 and 2+2?" });
-    expect(result.toolTrace).toHaveLength(1);
+    // one executed, one dropped-with-error — never silently discarded
+    expect(result.toolTrace).toHaveLength(2);
+    expect(result.toolTrace[0]!.output).toEqual({ expression: "1+1", result: 2 });
+    expect(result.toolTrace[1]!.error).toMatch(/not executed/i);
+  });
+
+  it("reports dropped tool calls back to the model so it can re-issue them", async () => {
+    // Regression: bench probe 2026-07-09 (v2-m6/w6/w9/m9) — excess native tool
+    // calls were silently discarded; the model believed both writes executed
+    // and reported phantom success.
+    let call = 0;
+    const llm = adapterFromFn(async (messages: ChatMessage[]) => {
+      call++;
+      if (call === 1) {
+        return {
+          content: "",
+          toolCalls: [
+            { name: "calculator.evaluate", arguments: { expression: "1+1" } },
+            { name: "calculator.evaluate", arguments: { expression: "2+2" } },
+          ],
+        };
+      }
+      if (call === 2) {
+        const toolMsgs = messages.filter((m) => m.role === "tool");
+        expect(toolMsgs.some((m) => /not executed/i.test(m.content))).toBe(true);
+        return { content: "", toolCalls: [{ name: "calculator.evaluate", arguments: { expression: "2+2" } }] };
+      }
+      return { content: "ACTION: final_answer\nANSWER: 2 and 4" };
+    });
+    const toolBridge = new DefaultToolBridge();
+    toolBridge.register(calculatorTool);
+    const loop = new DefaultAgentLoop({
+      llm,
+      memory: new InMemoryMemory(),
+      toolBridge,
+      validator: new StructuredOutputValidator(),
+      promptBuilder: new DefaultPromptBuilder(),
+      policy: { ...defaultPolicy, maxToolCallsPerTurn: 1 },
+    });
+
+    const result = await loop.run({ sessionId: "cap-report", userMessage: "1+1 and 2+2?" });
+    expect(result.terminatedReason).toBe("final_answer");
+    // executed 1+1, dropped 2+2, re-issued 2+2
+    expect(result.toolTrace).toHaveLength(3);
+    expect(result.toolTrace[1]!.error).toMatch(/not executed/i);
+    expect(result.toolTrace[2]!.output).toEqual({ expression: "2+2", result: 4 });
   });
 
   it("caps recent context and folds older turns into a summary", async () => {
