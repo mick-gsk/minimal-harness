@@ -108,12 +108,17 @@ interface HarnessAdapter {
 interface RunResult {
   finalAnswer: string | null;
   turns: number;
-  parseFailures: number;          // wie oft Tool-Call-Format brach
-  recoveries: number;             // wie oft das Harness sich erholte
+  parseFailures: number;          // wie oft Tool-Call-Format brach (Stufe 2)
+  recoveries: number;             // wie oft das Harness sich erholte (Stufe 2)
   tokens: number;
   latencyMs: number;
   error?: string;
 }
+```
+
+**MVP-Einschränkung:** `parseFailures`/`recoveries` erfordern Instrumentierung im Kern-Loop (Retries sind intern). Das MVP misst stattdessen `llmCalls` über einen Telemetrie-Decorator um `LLMAdapter` (kein Kern-Umbau, §6-konform); `llmCalls − turns` approximiert den Retry-Aufwand. Echte parseFailures/recoveries kommen in Stufe 2.
+
+```ts
 ```
 
 ### 4.2 Datenfluss
