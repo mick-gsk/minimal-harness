@@ -7,3 +7,4 @@ coverage/
 bench/results/
 bench/smolagents/.venv/
 bench/smolagents/__pycache__/
+bench/bfcl/data/

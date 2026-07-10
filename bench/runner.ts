@@ -9,6 +9,7 @@ import { DEFAULT_BASE_URL, DEFAULT_MODELS, SEEDS, TEMPERATURE } from "./config.j
 import { suiteV1, SUITE_VERSION } from "./tasks/frozen/suite-v1.js";
 import { suiteV2, SUITE_V2_VERSION } from "./tasks/frozen/suite-v2.js";
 import { devTasks } from "./tasks/dev.js";
+import { loadBfclSuite, BFCL_SUITE_VERSION } from "./bfcl/suite.js";
 import { minimalHarness } from "./harnesses/minimal.js";
 import { ollamaNativeHarness } from "./harnesses/ollama-native.js";
 import { naiveHarness } from "./harnesses/naive.js";
@@ -23,12 +24,16 @@ const modelNames = (process.env.BENCH_MODELS ?? DEFAULT_MODELS.join(","))
   .map((s) => s.trim())
   .filter(Boolean);
 const suiteEnv = process.env.BENCH_SUITE ?? "v2";
-if (!["dev", "v1", "v2"].includes(suiteEnv)) {
-  console.error(`✗ Unbekannte BENCH_SUITE '${suiteEnv}' — erlaubt: dev, v1, v2`);
+if (!["dev", "v1", "v2", "bfcl"].includes(suiteEnv)) {
+  console.error(`✗ Unbekannte BENCH_SUITE '${suiteEnv}' — erlaubt: dev, v1, v2, bfcl`);
   process.exit(1);
 }
 const useDev = suiteEnv === "dev";
-const tasks = useDev ? devTasks : suiteEnv === "v1" ? suiteV1 : suiteV2;
+const tasks =
+  suiteEnv === "dev" ? devTasks
+  : suiteEnv === "v1" ? suiteV1
+  : suiteEnv === "bfcl" ? loadBfclSuite()
+  : suiteV2;
 
 // BENCH_SEEDS overrides the default seeds (e.g. "1001" for a quick probe).
 // Non-default seeds make the run a PROBE: report to stdout only, never
@@ -44,7 +49,11 @@ if (seeds.length === 0) {
 
 const concurrency = Math.max(1, Number(process.env.BENCH_CONCURRENCY ?? "3") || 1);
 
-const suiteBase = useDev ? "dev (NICHT reportfähig)" : suiteEnv === "v1" ? SUITE_VERSION : SUITE_V2_VERSION;
+const suiteBase =
+  useDev ? "dev (NICHT reportfähig)"
+  : suiteEnv === "v1" ? SUITE_VERSION
+  : suiteEnv === "bfcl" ? BFCL_SUITE_VERSION
+  : SUITE_V2_VERSION;
 const suiteLabel = isProbe && !useDev ? `${suiteBase} PROBE (NICHT reportfähig, Seeds abweichend)` : suiteBase;
 
 // Preflight: Ollama reachable? Models present?
@@ -121,9 +130,12 @@ mkdirSync("bench/results", { recursive: true });
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 writeFileSync(`bench/results/results-${stamp}.json`, JSON.stringify({ meta, records }, null, 2));
 
+// BFCL gets its own report file so a v2 run never overwrites BFCL numbers
+// (and vice versa) — the two suites carry different claims.
+const reportFile = suiteEnv === "bfcl" ? "BENCHMARKS-BFCL.md" : "BENCHMARKS.md";
 if (!useDev && !isProbe) {
-  writeFileSync("BENCHMARKS.md", buildReport(records, meta));
-  console.log(`✓ BENCHMARKS.md geschrieben (${records.length} Läufe)`);
+  writeFileSync(reportFile, buildReport(records, meta));
+  console.log(`✓ ${reportFile} geschrieben (${records.length} Läufe)`);
 } else {
   console.log(buildReport(records, meta));
   console.log(
