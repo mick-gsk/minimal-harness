@@ -69,3 +69,48 @@ Bearer-API-Keys mit Konstantzeit-Digest-Vergleich, Session-Scope
 | Jest-Integration (401-Pfade, Isolation auf echter SQLite-Datei, SSE, 400/404/405/500) | 10/10 grün |
 | Concurrency-Smoke | 20 parallele Requests, 2 User, SQLite-Datei: alle 200, Isolation hält, **21 ms** |
 | Live-Smoke gegen GPU-Ollama (examples/server.ts, llama3.1) | `/healthz` 200 · ohne Key 401 · Alice: Calculator-Tool korrekt (17·23 = 391, 852 ms) · Bob: eigene Session · Alices Follow-up in gleichnamiger Session kennt Bobs Namen **nicht** („unknown") — Isolation hält auch live |
+
+---
+
+# Teilprojekt 6 — Ausbau für die Top-KMU-Use-Cases (EU-Marktrecherche)
+
+Herleitung: Marktrecherche 2026-07-10 (Bitkom 2026, OECD 2025, KMU-Praxisquellen)
+— höchstes Automationspotenzial in dokumenten-zentrierten Back-Office-Prozessen
+(Rechnung/Bestellung/E-Mail: strukturierte Extraktion), Wissensmanagement (RAG)
+und KI-Agenten mit menschlicher Aufsicht; größte Adoptionsbremse: Datenschutz/
+Rechtsunsicherheit → DSGVO-Routen, Observability, On-Premise-Deployment.
+
+## 6a/6b — DSGVO-Session-API & Observability
+
+| Prüfung | Ergebnis |
+|---|---|
+| Session-API (Art. 15/17): Liste/Auskunft/Löschung nur im eigenen User-Scope, fremde Session = 404 | Jest-Integration grün |
+| `/metrics` (Prometheus) zählt Requests/Runs/Dauern; Run-Logs als JSON-Zeile ohne Nachrichteninhalte | Jest-Integration grün |
+
+## 6c — Strukturierte Extraktion (`responseSchema`)
+
+| Prüfung | Ergebnis |
+|---|---|
+| Jest (Schema-Vertrag im Prompt, Fence-Toleranz, Korrektur-Retry, Typ-Checks, fail-explicit) | 13/13 grün |
+| GPU-Probe Feld-Genauigkeit (5 deutsche Belege × 5 Seeds, Vertrag vs. reiner JSON-Wunsch) | _nach Bench-Ende eingetragen_ |
+
+## 6d — Lokales RAG (`SqliteKnowledgeStore` + `knowledge.search`)
+
+| Prüfung | Ergebnis |
+|---|---|
+| Jest (Cosine-Ranking, Persistenz, Tool-Integration) | 5/5 grün |
+| Embedding-Modellwahl (8 deutsche Firmendokumente, 5 Queries, GPU) | nomic-embed-text hit@1 **2/5** (mit Task-Präfixen 1/5) → **bge-m3 hit@1 5/5, hit@3 5/5** ⇒ bge-m3 ist Default (EU-/Mehrsprachigkeit) |
+
+## 6e — Approval-Gate (Human-in-the-Loop)
+
+| Prüfung | Ergebnis |
+|---|---|
+| Jest (Loop-Hook: deny → kein Lauf + ehrliches Feedback ans Modell; Parallel: Freigaben vor Batch-Start) | grün |
+| Jest (Server-SSE: approval_request → approve/deny; fremder User 404; Timeout = deny fail-closed; non-stream = deny) | grün |
+
+## 6f — Deployment
+
+| Prüfung | Ergebnis |
+|---|---|
+| Produktions-Build (`dist/server-main.js`, ohne Dev-Dependencies) | Boot-Smoke: `/healthz` 200, `/metrics` 200, ohne Key 401. Gefundener & gefixter Build-Bug: tsup entfernte das `node:`-Präfix von `node:sqlite` (removeNodeProtocol=false) |
+| Dockerfile (Multi-Stage) + docs/deployment.md (Compose, systemd, Backup, DSGVO, Reverse-Proxy) | vorhanden, dokumentiert |

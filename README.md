@@ -220,15 +220,37 @@ createAgentServer({
 - **Auth**: Bearer API keys, constant-time comparison over SHA-256 digests
 - **Isolation**: sessions are scoped `userId:sessionId` — the userId comes from
   the API key only, so users can never touch each other's sessions
-- **Routes**: `GET /healthz`, `POST /v1/agent/run` (`{sessionId, message, maxTurns?, stream?}`);
-  `stream: true` returns SSE token events plus a final `result` event
+- **Routes**: `GET /healthz` · `GET /metrics` (Prometheus) ·
+  `POST /v1/agent/run` (`{sessionId, message, maxTurns?, stream?, responseSchema?}`;
+  `stream: true` returns SSE token events plus a final `result` event) ·
+  `GET|DELETE /v1/sessions[/{id}]` (GDPR Art. 15 access / Art. 17 erasure,
+  own sessions only) · `POST /v1/agent/approvals/{id}`
+- **Human-in-the-loop**: list tools in `requireApproval` and streaming clients
+  get an `approval_request` event before the tool runs; no answer = deny
+  (fail-closed), non-streaming requests deny gated tools outright
+- **Observability**: request/run counters and durations at `/metrics`, one
+  structured JSON log line per run — metadata only, message content is never logged
 - **Validated**: integration tests cover auth failures, cross-user isolation on
-  a real SQLite file, SSE, error paths, and a 20-parallel-request smoke (21 ms)
+  a real SQLite file, SSE, approval flows, error paths, and a
+  20-parallel-request smoke (21 ms)
 - TLS and rate limiting deliberately live in your reverse proxy
 
-See [examples/server.ts](examples/server.ts) for a runnable setup. All five
-production capabilities (durable memory, OpenAI-compat adapters, streaming,
-parallel tools, multi-user server) are measured and validated —
+See [examples/server.ts](examples/server.ts) for a runnable setup and
+[docs/deployment.md](docs/deployment.md) for Docker/systemd operations.
+
+## Structured Extraction & Local RAG
+
+- **`responseSchema`** on `loop.run(...)` (or the server body): the final
+  answer must be one JSON object matching your schema — contract in the
+  prompt, validation, corrective retries, `structuredAnswer` on the result.
+  A run that never conforms fails explicitly instead of returning broken JSON.
+  Built for the highest-ROI SME use cases: invoice/order/e-mail extraction.
+- **`SqliteKnowledgeStore` + `knowledge.search`**: a fully local knowledge
+  base — Ollama embeddings (default `bge-m3`, multilingual: hit@1 5/5 on
+  German queries vs. 2/5 for nomic-embed-text) with SQLite storage and
+  cosine ranking. Zero cloud, zero new dependencies.
+
+All production capabilities are measured and validated —
 see [docs/mittelstand-validierung.md](docs/mittelstand-validierung.md).
 
 ## v1 Limitations
