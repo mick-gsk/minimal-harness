@@ -53,6 +53,14 @@ export class SqliteMemory implements Memory {
     this.db.prepare("DELETE FROM messages WHERE session_id = ?").run(sessionId);
   }
 
+  async listSessions(prefix?: string): Promise<string[]> {
+    const rows = this.db
+      .prepare("SELECT DISTINCT session_id AS id FROM messages ORDER BY id")
+      .all() as unknown as Array<{ id: string }>;
+    const ids = rows.map((r) => r.id);
+    return prefix ? ids.filter((id) => id.startsWith(prefix)) : ids;
+  }
+
   /** Escape hatch for tests and migrations; not part of the Memory interface. */
   raw(): DatabaseSync {
     return this.db;

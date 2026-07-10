@@ -34,6 +34,42 @@ interface RunRequest {
 /** Requests above this size are rejected — protects against memory abuse. */
 const MAX_BODY_BYTES = 1024 * 1024;
 
+/** In-process counters, exposed at GET /metrics in Prometheus text format. */
+class Metrics {
+  readonly requests = new Map<string, number>();
+  readonly runsByReason = new Map<string, number>();
+  toolCallsTotal = 0;
+  runDurationMsSum = 0;
+  runDurationMsCount = 0;
+
+  countRequest(route: string, status: number): void {
+    const key = `route="${route}",status="${status}"`;
+    this.requests.set(key, (this.requests.get(key) ?? 0) + 1);
+  }
+
+  countRun(reason: string, durationMs: number, toolCalls: number): void {
+    this.runsByReason.set(reason, (this.runsByReason.get(reason) ?? 0) + 1);
+    this.toolCallsTotal += toolCalls;
+    this.runDurationMsSum += durationMs;
+    this.runDurationMsCount += 1;
+  }
+
+  render(): string {
+    const lines = [
+      "# TYPE harness_requests_total counter",
+      ...[...this.requests].map(([labels, n]) => `harness_requests_total{${labels}} ${n}`),
+      "# TYPE harness_runs_total counter",
+      ...[...this.runsByReason].map(([reason, n]) => `harness_runs_total{terminated_reason="${reason}"} ${n}`),
+      "# TYPE harness_tool_calls_total counter",
+      `harness_tool_calls_total ${this.toolCallsTotal}`,
+      "# TYPE harness_run_duration_ms summary",
+      `harness_run_duration_ms_sum ${this.runDurationMsSum}`,
+      `harness_run_duration_ms_count ${this.runDurationMsCount}`,
+    ];
+    return `${lines.join("\n")}\n`;
+  }
+}
+
 /**
  * Deployable HTTP layer over the harness: API-key auth, per-user session
  * isolation, optional SSE streaming. TLS and rate limiting belong in the
@@ -42,6 +78,7 @@ const MAX_BODY_BYTES = 1024 * 1024;
 export function createAgentServer(options: AgentServerOptions): Server {
   const auth = new ApiKeyAuth(options.apiKeys);
   const maxTurnsCeiling = options.maxTurns ?? 10;
+  const metrics = new Metrics();
 
   const toolBridge = new DefaultToolBridge();
   for (const tool of options.tools) toolBridge.register(tool);
@@ -59,6 +96,9 @@ export function createAgentServer(options: AgentServerOptions): Server {
   });
 
   return createServer((req, res) => {
+    // Normalized route label (session ids collapsed) keeps metrics cardinality bounded.
+    const route = (req.url ?? "").startsWith("/v1/sessions/") ? "/v1/sessions/{id}" : (req.url ?? "");
+    res.on("finish", () => metrics.countRequest(route, res.statusCode));
     handle(req, res).catch((err) => {
       logger.warn(`Unhandled server error: ${err instanceof Error ? err.message : String(err)}`);
       if (!res.headersSent) sendJson(res, 500, { error: "internal server error" });
@@ -70,6 +110,17 @@ export function createAgentServer(options: AgentServerOptions): Server {
     if (req.url === "/healthz") {
       if (req.method !== "GET") return sendJson(res, 405, { error: "method not allowed" });
       return sendJson(res, 200, { status: "ok" });
+    }
+
+    if (req.url === "/metrics") {
+      if (req.method !== "GET") return sendJson(res, 405, { error: "method not allowed" });
+      res.writeHead(200, { "Content-Type": "text/plain; version=0.0.4" });
+      res.end(metrics.render());
+      return;
+    }
+
+    if (req.url === "/v1/sessions" || req.url?.startsWith("/v1/sessions/")) {
+      return handleSessions(req, res);
     }
 
     if (req.url === "/v1/agent/run") {
@@ -96,10 +147,12 @@ export function createAgentServer(options: AgentServerOptions): Server {
       const sessionId = `${userId}:${body.sessionId}`;
       const maxTurns = Math.min(body.maxTurns ?? maxTurnsCeiling, maxTurnsCeiling);
 
-      if (body.stream === true) return runStreaming(res, sessionId, body.message, maxTurns);
+      if (body.stream === true) return runStreaming(res, userId, sessionId, body.message, maxTurns);
 
+      const startedAt = Date.now();
       try {
         const result = await loop.run({ sessionId, userMessage: body.message, maxTurns });
+        recordRun(userId, sessionId, result.terminatedReason, startedAt, result.rawTurns.length, result.toolTrace.length);
         return sendJson(res, 200, {
           finalAnswer: result.finalAnswer,
           terminatedReason: result.terminatedReason,
@@ -107,6 +160,7 @@ export function createAgentServer(options: AgentServerOptions): Server {
           toolCallCount: result.toolTrace.length,
         });
       } catch (err) {
+        recordRun(userId, sessionId, "error", startedAt, 0, 0);
         return sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
       }
     }
@@ -114,12 +168,68 @@ export function createAgentServer(options: AgentServerOptions): Server {
     sendJson(res, 404, { error: "not found" });
   }
 
+  /**
+   * Session-management routes (GDPR Art. 15 access / Art. 17 erasure). Every
+   * lookup is scoped to the caller's user id, so foreign sessions are not
+   * addressable at all.
+   */
+  async function handleSessions(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const userId = auth.resolveUser(req.headers.authorization);
+    if (!userId) return sendJson(res, 401, { error: "invalid or missing API key" });
+
+    const memory = options.memory;
+    if (req.url === "/v1/sessions") {
+      if (req.method !== "GET") return sendJson(res, 405, { error: "method not allowed" });
+      if (!memory.listSessions) {
+        return sendJson(res, 501, { error: "the configured Memory does not implement listSessions" });
+      }
+      const prefix = `${userId}:`;
+      const ids = await memory.listSessions(prefix);
+      return sendJson(res, 200, { sessions: ids.map((id) => id.slice(prefix.length)) });
+    }
+
+    const ownId = decodeURIComponent((req.url ?? "").slice("/v1/sessions/".length));
+    if (!ownId) return sendJson(res, 404, { error: "not found" });
+    const scopedId = `${userId}:${ownId}`;
+
+    if (req.method === "GET") {
+      const state = await memory.get(scopedId);
+      if (state.messages.length === 0) return sendJson(res, 404, { error: "session not found" });
+      return sendJson(res, 200, { sessionId: ownId, messages: state.messages });
+    }
+    if (req.method === "DELETE") {
+      await memory.clear(scopedId);
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+    sendJson(res, 405, { error: "method not allowed" });
+  }
+
+  /** One structured JSON log line per run — metadata only, never message content. */
+  function recordRun(
+    userId: string,
+    sessionId: string,
+    reason: string,
+    startedAt: number,
+    turns: number,
+    toolCalls: number,
+  ): void {
+    const durationMs = Date.now() - startedAt;
+    metrics.countRun(reason, durationMs, toolCalls);
+    logger.info(
+      JSON.stringify({ ts: new Date().toISOString(), userId, sessionId, terminatedReason: reason, durationMs, turns, toolCalls }),
+    );
+  }
+
   async function runStreaming(
     res: ServerResponse,
+    userId: string,
     sessionId: string,
     userMessage: string,
     maxTurns: number,
   ): Promise<void> {
+    const startedAt = Date.now();
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
@@ -136,6 +246,7 @@ export function createAgentServer(options: AgentServerOptions): Server {
         maxTurns,
         onToken: (chunk) => send("token", { chunk }),
       });
+      recordRun(userId, sessionId, result.terminatedReason, startedAt, result.rawTurns.length, result.toolTrace.length);
       send("result", {
         finalAnswer: result.finalAnswer,
         terminatedReason: result.terminatedReason,
@@ -143,6 +254,7 @@ export function createAgentServer(options: AgentServerOptions): Server {
         toolCallCount: result.toolTrace.length,
       });
     } catch (err) {
+      recordRun(userId, sessionId, "error", startedAt, 0, 0);
       send("error", { error: err instanceof Error ? err.message : String(err) });
     }
     res.end();

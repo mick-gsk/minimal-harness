@@ -106,6 +106,16 @@ describe("sqlite-memory", () => {
     expect(() => new SqliteMemory("/nonexistent-dir/nope/memory.db")).toThrow(/memory\.db|unable|cannot/i);
   });
 
+  it("lists sessions, optionally filtered by prefix", async () => {
+    const memory = openMemory(":memory:");
+    await memory.append("alice:chat-1", record());
+    await memory.append("alice:chat-2", record());
+    await memory.append("bob:chat-1", record());
+    expect((await memory.listSessions()).sort()).toEqual(["alice:chat-1", "alice:chat-2", "bob:chat-1"]);
+    expect((await memory.listSessions("alice:")).sort()).toEqual(["alice:chat-1", "alice:chat-2"]);
+    expect(await memory.listSessions("carol:")).toEqual([]);
+  });
+
   it("perf smoke: 10k appends and a 1k-message get", async () => {
     const memory = openMemory(tempDbPath());
     const appendStart = performance.now();

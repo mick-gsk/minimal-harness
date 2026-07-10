@@ -15,4 +15,9 @@ export class InMemoryMemory implements Memory {
   async clear(sessionId: string): Promise<void> {
     this.store.delete(sessionId);
   }
+
+  async listSessions(prefix?: string): Promise<string[]> {
+    const ids = [...this.store.keys()];
+    return prefix ? ids.filter((id) => id.startsWith(prefix)) : ids;
+  }
 }

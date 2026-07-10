@@ -148,6 +148,49 @@ describe("agent-server", () => {
     await new Promise<void>((resolve, reject) => failing.close((e) => (e ? reject(e) : resolve())));
   });
 
+  it("session API: lists, returns and deletes only the caller's sessions", async () => {
+    await run({ sessionId: "gdpr-a", message: "alice data" }, "sk-alice");
+    await run({ sessionId: "gdpr-b", message: "bob data" }, "sk-bob");
+
+    // List: alice sees her sessions, never bob's
+    const listRes = await fetch(`${base}/v1/sessions`, { headers: { Authorization: "Bearer sk-alice" } });
+    expect(listRes.status).toBe(200);
+    const list = (await listRes.json()) as { sessions: string[] };
+    expect(list.sessions).toContain("gdpr-a");
+    expect(list.sessions).not.toContain("gdpr-b");
+
+    // Access (GDPR Art. 15): own history is returned, foreign one is a 404
+    const getRes = await fetch(`${base}/v1/sessions/gdpr-a`, { headers: { Authorization: "Bearer sk-alice" } });
+    expect(getRes.status).toBe(200);
+    const history = (await getRes.json()) as { messages: Array<{ content: string }> };
+    expect(history.messages.map((m) => m.content).join("\n")).toContain("alice data");
+    const foreign = await fetch(`${base}/v1/sessions/gdpr-b`, { headers: { Authorization: "Bearer sk-alice" } });
+    expect(foreign.status).toBe(404);
+
+    // Erasure (GDPR Art. 17): delete removes only the own session
+    const delRes = await fetch(`${base}/v1/sessions/gdpr-a`, {
+      method: "DELETE",
+      headers: { Authorization: "Bearer sk-alice" },
+    });
+    expect(delRes.status).toBe(204);
+    expect((await memory.get("alice:gdpr-a")).messages).toEqual([]);
+    expect((await memory.get("bob:gdpr-b")).messages.length).toBeGreaterThan(0);
+
+    // Auth required on all session routes
+    expect((await fetch(`${base}/v1/sessions`)).status).toBe(401);
+  });
+
+  it("GET /metrics exposes request and run counters in Prometheus format", async () => {
+    await run({ sessionId: "metrics", message: "count me" }, "sk-alice");
+    const res = await fetch(`${base}/metrics`);
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toContain("harness_requests_total");
+    expect(text).toMatch(/harness_runs_total\{terminated_reason="final_answer"\} [1-9]/);
+    expect(text).toContain("harness_run_duration_ms_sum");
+    expect(text).toContain("harness_run_duration_ms_count");
+  });
+
   it("concurrency smoke: 20 parallel requests from 2 users over a real SQLite file stay isolated", async () => {
     const dir = mkdtempSync(join(tmpdir(), "server-smoke-"));
     const sqlite = new SqliteMemory(join(dir, "memory.db"));
