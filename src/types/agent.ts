@@ -5,6 +5,12 @@ export interface AgentLoopInput {
   sessionId: string;
   userMessage: string;
   maxTurns?: number;
+  /**
+   * Receives each raw content chunk of the main turn LLM calls when the
+   * backend streams. In text-protocol mode chunks include protocol markup
+   * (ACTION: ...); retry and verify calls do not stream.
+   */
+  onToken?: (chunk: string) => void;
 }
 
 export interface AgentTurn {

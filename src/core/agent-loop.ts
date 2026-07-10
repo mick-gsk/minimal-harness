@@ -97,7 +97,7 @@ export class DefaultAgentLoop implements AgentLoop {
   }
 
   async run(input: AgentLoopInput): Promise<AgentLoopResult> {
-    const { sessionId, userMessage, maxTurns = 10 } = input;
+    const { sessionId, userMessage, maxTurns = 10, onToken } = input;
     const { llm, memory, toolBridge, validator, promptBuilder } = this.deps;
     const systemInstruction = this.deps.systemInstruction ?? "You are a helpful assistant.";
 
@@ -147,7 +147,10 @@ export class DefaultAgentLoop implements AgentLoop {
       });
 
       logger.debug(`[turn ${turn}] Calling LLM`);
-      const llmResponse = await llm.generate(messages, { tools: toolSpecs });
+      const llmResponse = await llm.generate(messages, {
+        tools: toolSpecs,
+        ...(onToken ? { onToken } : {}),
+      });
       const rawOutput = llmResponse.content;
 
       // Native tool-calling path: structured tool calls are already valid JSON,

@@ -366,4 +366,42 @@ describe("DefaultAgentLoop", () => {
     expect(nonSystem.length).toBeLessThanOrEqual(10);
     expect(prompt.some((m) => m.role === "system" && m.content.includes("Context Summary"))).toBe(true);
   });
+
+  it("streams main-turn tokens to the caller via input.onToken", async () => {
+    const responses = [
+      `ACTION: tool_call\nTOOL: calculator.evaluate\nARGS: {"expression":"3*3"}`,
+      "ACTION: final_answer\nANSWER: 9",
+    ];
+    let i = 0;
+    // Emits the response in two chunks when the caller asked for streaming —
+    // mirrors how OllamaClient/OpenAiCompatAdapter behave with onToken set.
+    const llm = adapterFromFn(async (_messages, options) => {
+      const content = responses[i++] ?? "ACTION: final_answer\nANSWER: done";
+      if (options?.onToken) {
+        const mid = Math.ceil(content.length / 2);
+        options.onToken(content.slice(0, mid));
+        options.onToken(content.slice(mid));
+      }
+      return { content };
+    });
+    const toolBridge = new DefaultToolBridge();
+    toolBridge.register(calculatorTool);
+    const loop = new DefaultAgentLoop({
+      llm,
+      memory: new InMemoryMemory(),
+      toolBridge,
+      validator: new StructuredOutputValidator(),
+      promptBuilder: new DefaultPromptBuilder(),
+    });
+
+    const chunks: string[] = [];
+    const result = await loop.run({
+      sessionId: "s-stream",
+      userMessage: "What is 3*3?",
+      onToken: (c) => chunks.push(c),
+    });
+
+    expect(result.terminatedReason).toBe("final_answer");
+    expect(chunks.join("")).toBe(responses.join(""));
+  });
 });
