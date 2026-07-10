@@ -226,7 +226,10 @@ createAgentServer({
   a real SQLite file, SSE, error paths, and a 20-parallel-request smoke (21 ms)
 - TLS and rate limiting deliberately live in your reverse proxy
 
-See [examples/server.ts](examples/server.ts) for a runnable setup.
+See [examples/server.ts](examples/server.ts) for a runnable setup. All five
+production capabilities (durable memory, OpenAI-compat adapters, streaming,
+parallel tools, multi-user server) are measured and validated —
+see [docs/mittelstand-validierung.md](docs/mittelstand-validierung.md).
 
 ## v1 Limitations
 
