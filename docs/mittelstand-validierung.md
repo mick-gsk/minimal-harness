@@ -114,3 +114,35 @@ Rechtsunsicherheit → DSGVO-Routen, Observability, On-Premise-Deployment.
 |---|---|
 | Produktions-Build (`dist/server-main.js`, ohne Dev-Dependencies) | Boot-Smoke: `/healthz` 200, `/metrics` 200, ohne Key 401. Gefundener & gefixter Build-Bug: tsup entfernte das `node:`-Präfix von `node:sqlite` (removeNodeProtocol=false) |
 | Dockerfile (Multi-Stage) + docs/deployment.md (Compose, systemd, Backup, DSGVO, Reverse-Proxy) | vorhanden, dokumentiert |
+
+---
+
+# Produktionsreife-Test: Demo-Unternehmen (bench/company)
+
+Testgelände: deterministisch generiertes Mittelstands-Unternehmen
+(„Selkinghaus Federn- und Stanztechnik", 142 MA) mit Fileserver (38 Dateien,
+teils windows-1252), Mail-Archiv, ERP (SQLite, 7 Tabellen) und AD-Exporten —
+plus 16 Ground-Truth-Fragen (`company/truth/facts.jsonl`): Tribal Knowledge nur
+in Mails, Revisions-Widersprüche, veraltete Exporte, DSGVO-Verstöße in ACLs und
+Halluzinations-Fallen. Der Agent bekommt drei Deployment-Tools: `fs.list`,
+`fs.read` (mit cp1252-Toleranz und Traversal-Guard), `erp.query` (nur SELECT).
+
+## Fix-Kreislauf (jeder Schritt gemessen, qwen3:8b)
+
+| Lauf | Ergebnis | Befund → Maßnahme |
+|---|---|---|
+| 1 | **0/16** | Modell schreibt mitten in der Recherche `ACTION: <toolname>` statt `ACTION: tool_call`; der strikte Validator verwarf ganze Läufe → **Parser akzeptiert Protokoll-Drift**, wenn TOOL+ARGS/ANSWER eindeutig sind (zeilenverankert); Retry-Prompt zeigt das exakte Format |
+| 2 | 2/16 | System-Instruktion nannte die Datensysteme nicht — Mail-Archiv wurde nie durchsucht → **Systems-Overview in die Deployment-Instruktion** (Konfiguration, kein Antwort-Leak) |
+| 3 | 6/16 | 20k-Zeichen-Reads + 12 Turns sprengen das 8k-Server-Kontextfenster; Ollama schneidet vorne ab und wirft den System-Prompt weg (sichtbar als Drift/„vergessene" Funde) → **`numCtx`-Option im OllamaClient (16k)** + Read-Cap 6k Zeichen |
+| 4 | 7/16 (Einzellauf, hohe Varianz) | Einzelläufe bei temp 0.7 kippen pro Lauf → **Produktions-Config**: temp 0.1, think, k=3 Seeds |
+| 5 | **20/48 (42 %)** pass@1 über 3 Seeds | Verbleibende Fails: Multi-Quellen-Recherche (ACL-Abgleich, Kalkulations-Mail) — Modellfähigkeits-, nicht Harness-Grenze bei 8B |
+
+Nebenbefund: `unbeantwortbar`-Fallen **5/6 verweigert** statt halluziniert —
+die Ehrlichkeits-Instruktion + Fehler-Feedback wirken.
+
+## Modell-Sizing (Produktionsempfehlung)
+
+| Modell | Ergebnis |
+|---|---|
+| qwen3:8b (think, temp 0.1, 16k ctx) | 20/48 (42 %) |
+| qwen3:14b (gleiche Config) | _läuft — wird eingetragen_ |
