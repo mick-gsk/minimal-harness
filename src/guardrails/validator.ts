@@ -20,7 +20,14 @@ export class StructuredOutputValidator implements OutputValidator {
     // Locate the ARGS marker; the JSON object is then extracted by brace
     // matching rather than a lazy regex, so nested objects and trailing
     // prose after the object no longer break parsing.
-    const header = text.match(/ACTION:\s*tool_call[\s\S]*?TOOL:\s*([\w.]+)[\s\S]*?ARGS:\s*/i);
+    //
+    // The ACTION line is deliberately NOT required to say "tool_call":
+    // models drift into "ACTION: <toolname>" (or drop the line) mid-run, and
+    // TOOL + ARGS already make the intent unambiguous. Same forgiveness for
+    // final answers below: an ANSWER field counts even when ACTION is off.
+    // Line-anchored and case-sensitive: the uppercase field names are the
+    // protocol signal; lowercase prose like "the answer: 42" must not match.
+    const header = text.match(/^[ \t]*TOOL:\s*([\w.]+)[\s\S]*?^[ \t]*ARGS:\s*/m);
     if (header) {
       const toolName = header[1]!;
       const argsText = extractBalancedObject(text, header.index! + header[0].length);
@@ -45,7 +52,7 @@ export class StructuredOutputValidator implements OutputValidator {
       };
     }
 
-    const finalMatch = text.match(/ACTION:\s*final_answer[\s\S]*?ANSWER:\s*([\s\S]+)/i);
+    const finalMatch = text.match(/^[ \t]*ANSWER:\s*([\s\S]+)/m);
     if (finalMatch) {
       return {
         valid: true,

@@ -10,7 +10,10 @@ export const defaultRetryStrategy: RetryStrategy = {
       `Your previous response was not in the required format.\n` +
       `Reason: ${reason}\n` +
       `Previous output:\n${lastOutput}\n\n` +
-      `Please respond strictly using the ACTION/TOOL/ARGS or ACTION/ANSWER format.`
+      `Respond in exactly one of these two formats:\n` +
+      `ACTION: tool_call\nTOOL: <tool_name>\nARGS: <json>\n\n` +
+      `or:\n` +
+      `ACTION: final_answer\nANSWER: <your answer>`
     );
   },
 };

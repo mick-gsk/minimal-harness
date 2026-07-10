@@ -47,4 +47,36 @@ describe("StructuredOutputValidator", () => {
     const r = v.validate(`ACTION: tool_call\nTOOL: t\nARGS: {"a": {"b": 1}`);
     expect(r.valid).toBe(false);
   });
+
+  // Regression: company probe 2026-07-10 — qwen3:8b writes the tool name into
+  // the ACTION field after the first tool result. TOOL + ARGS make the intent
+  // unambiguous; rejecting it cost entire research runs.
+  it("accepts a tool call whose ACTION field holds the tool name", () => {
+    const r = v.validate(`ACTION: fs.list\nTOOL: fs.list\nARGS: {"path": "QM/"}`);
+    expect(r.valid).toBe(true);
+    expect(r.parsed?.kind).toBe("tool_call");
+    expect(r.parsed?.toolName).toBe("fs.list");
+  });
+
+  it("accepts a tool call with a missing ACTION line entirely", () => {
+    const r = v.validate(`TOOL: erp.query\nARGS: {"sql": "SELECT 1"}`);
+    expect(r.valid).toBe(true);
+    expect(r.parsed?.toolName).toBe("erp.query");
+  });
+
+  it("accepts a final answer whose ACTION line is malformed", () => {
+    const r = v.validate(`ACTION: answer\nANSWER: Revision C ist gültig.`);
+    expect(r.valid).toBe(true);
+    expect(r.parsed?.kind).toBe("final");
+    expect(r.parsed?.finalText).toContain("Revision C");
+  });
+
+  it("still rejects output with neither tool intent nor answer", () => {
+    expect(v.validate("Ich schaue mal nach.").valid).toBe(false);
+  });
+
+  it("prefers the tool call when both TOOL/ARGS and ANSWER appear", () => {
+    const r = v.validate(`TOOL: fs.read\nARGS: {"path":"a.txt"}\nANSWER: noch nicht fertig`);
+    expect(r.parsed?.kind).toBe("tool_call");
+  });
 });
