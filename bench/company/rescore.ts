@@ -17,6 +17,8 @@ interface Row {
   model: string;
   harness: string;
   think: boolean;
+  /** Deployment-instruction version; absent in early rows = 1. */
+  prompt?: number;
   seed: number;
   factId: string;
   typ: string;
@@ -29,12 +31,12 @@ const byId = new Map(FACTS.map((f) => [f.id, f]));
 const latest = new Map<string, Row>();
 for (const line of readFileSync(file, "utf8").trim().split("\n")) {
   const row = JSON.parse(line) as Row;
-  latest.set(`${row.model}|${row.harness}|${row.think}|${row.seed}|${row.factId}`, row);
+  latest.set(`${row.model}|${row.harness}|${row.think}|${row.prompt ?? 1}|${row.seed}|${row.factId}`, row);
 }
 
 const cells = new Map<string, Row[]>();
 for (const row of latest.values()) {
-  const key = `${row.model} ${row.harness}`;
+  const key = `${row.model} ${row.harness} p${row.prompt ?? 1}`;
   if (!cells.has(key)) cells.set(key, []);
   cells.get(key)!.push(row);
 }

@@ -50,7 +50,10 @@ const CORPUS = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "compan
 
 // A real deployment tells its assistant which systems exist — that is
 // configuration, not answer-leaking. Nothing here names a fact or a file
-// that answers a question.
+// that answers a question. COMPANY_PROMPT=2 adds one sentence of generic
+// research method (persistence + query variation) — the calibration any
+// company does on its assistant instruction; every arm gets the same prompt.
+const PROMPT_VERSION = process.env.COMPANY_PROMPT === "2" ? 2 : 1;
 const SYSTEM_INSTRUCTION =
   "Du bist der interne Wissensassistent der Selkinghaus Federn- und Stanztechnik GmbH (Lüdenscheid). " +
   "Dir stehen vier Datenquellen zur Verfügung: der Fileserver (Ordner 'fileserver/', per fs.list erkunden und fs.read lesen), " +
@@ -58,6 +61,10 @@ const SYSTEM_INSTRUCTION =
   "und das ERP (per erp.query, SQL). Mit fs.search durchsuchst du alle Dateien und Mails im Volltext nach Stichwörtern. " +
   "Recherchiere gründlich und systematisch: suche zuerst per fs.search nach den Stichwörtern der Frage, lies relevante Dokumente und Mails vollständig, " +
   "und prüfe bei Zahlen auch das ERP. Nenne konkrete Zahlen und Quellen. " +
+  (PROMPT_VERSION === 2
+    ? "Antworte erst, wenn du die relevanten Quellen wirklich gelesen hast — eine Frage braucht in der Regel mehrere Tool-Aufrufe (suchen, lesen, querprüfen). " +
+      "Wenn eine Suche nichts findet, probiere andere Stichwörter (Synonyme, Teilbegriffe, Namen), bevor du aufgibst. "
+    : "") +
   "Wenn Quellen sich widersprechen, benenne den Widerspruch offen. " +
   "Wenn eine Information nirgends dokumentiert ist, sage klar, dass sie nicht ableitbar ist — rate niemals. " +
   "Antworte auf Deutsch.";
@@ -243,7 +250,7 @@ async function main(): Promise<void> {
       const { ok, note, answer, raw } = await runFact(fact, seed);
       appendFileSync(
         resultLog,
-        JSON.stringify({ ts: new Date().toISOString(), model: MODEL, harness: HARNESS, think: THINK, seed, factId: fact.id, typ: fact.typ, ok, note: answer === undefined ? note : undefined, answer, raw }) + "\n",
+        JSON.stringify({ ts: new Date().toISOString(), model: MODEL, harness: HARNESS, think: THINK, prompt: PROMPT_VERSION, seed, factId: fact.id, typ: fact.typ, ok, note: answer === undefined ? note : undefined, answer, raw }) + "\n",
       );
       marks.push(ok ? "✓" : "✗");
       if (ok) {
