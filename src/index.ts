@@ -34,6 +34,13 @@ export { AgentError, ToolNotFoundError, ToolValidationError } from "./utils/erro
 export { safeParseJson } from "./utils/json.js";
 export { logger } from "./utils/logger.js";
 
+// RAG / knowledge base
+export { OllamaEmbedder } from "./rag/embedder.js";
+export type { Embedder, OllamaEmbedderConfig } from "./rag/embedder.js";
+export { SqliteKnowledgeStore } from "./rag/knowledge-store.js";
+export type { KnowledgeHit } from "./rag/knowledge-store.js";
+export { makeKnowledgeSearchTool } from "./tools/builtins/knowledge.js";
+
 // Server
 export { createAgentServer } from "./server/agent-server.js";
 export type { AgentServerOptions } from "./server/agent-server.js";
