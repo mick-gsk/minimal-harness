@@ -45,7 +45,7 @@ const CORPUS = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "compan
 function normalize(text: string): string {
   return text
     .toLowerCase()
-    .replace(/ /g, " ")
+    .replace(/\u00a0/g, " ")
     .replace(/(\d)\.(\d{3})\b/g, "$1$2") // 250.000 -> 250000
     .replace(/(\d),(\d)/g, "$1.$2") // 1,17 -> 1.17
     .replace(/\s+/g, " ");
