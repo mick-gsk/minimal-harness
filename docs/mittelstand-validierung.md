@@ -147,19 +147,112 @@ die Ehrlichkeits-Instruktion + Fehler-Feedback wirken.
 | qwen3:8b (think, temp 0.1, 16k ctx) | 20/48 (42 %) pass@1; `unbeantwortbar` 5/6 verweigert |
 | qwen3:14b (gleiche Config) | **passt nicht**: 20,6 GB gesamt, nur 76 % im 16-GB-VRAM (16k ctx × OLLAMA_NUM_PARALLEL=4) → CPU-Spill, abgebrochen |
 
-## Urteil (Stand 2026-07-10)
+## Wettbewerbs-Matrix: das Harness gegen die Konkurrenz (2026-07-10, nachmittags)
 
-**Was produktionsreif ist:** die Harness-Mechanik. Protokoll-Recovery,
-Tool-Fehler-Feedback (falsches SQL → Schema-Discovery → korrekte Antwort),
-Halluzinations-Disziplin (5/6 Verweigerungen), Isolation, Persistenz, Betrieb —
-alle im Company-Test aufgedeckten **Harness**-Fehler wurden behoben und sind
-mit Regressionstests fixiert.
+Gleiche 16 Fragen, gleiche Deployment-Instruktion, gleiche Tools (jetzt vier:
+plus `fs.search`, Volltextsuche mit Datei-Level-UND über Mehrwort-Queries —
+Root-Cause: Modelle suchen wie Menschen, „DF-12040 Wittenbrink"), gleiche
+Turn-Budgets, temp 0.1, 16k ctx, 3 Seeds. Konkurrenten: **ollama-native**
+(naives Function-Calling, wie man es out-of-the-box schreibt) und **Hugging
+Face smolagents** (off-the-shelf, eigener Scaffold). Volle Antworten liegen
+als Evidenz in `results.jsonl`; Scoring offline reproduzierbar per
+`rescore.ts` (REFUSAL-Checks evidenzbasiert kalibriert, gelten für alle Arme
+gleich).
+
+Zwei Deployment-Instruktionen wurden versioniert gemessen (p1 = Basis;
+p2 = plus ein Satz Recherche-Beharrlichkeit — gleiche Instruktion für alle
+Arme). pass@1 über 16 Fakten × 3 Seeds (n=48 pro Zelle):
+
+| Arm | qwen p1 | qwen p2 | llama p1 | llama p2 |
+|---|---|---|---|---|
+| **minimal (Text-Protokoll, think)** | 48 % | 48 % | 13 % | — |
+| **minimal@verify** | **50 %** | 48 % | — | — |
+| **minimal@nt (nativeToolCalling)** | 40 % | 48 % | **40 %** | 21 % |
+| minimal@nt4 (4 parallele Calls/Turn) | 42 % | 48 % | 40 % | — |
+| ollama-native (Baseline, ohne Harness) | 42 % | 58 % | 27 % | 21 % |
+| smolagents-code (HF-Default-Empfehlung) | 54 % | — | — | — |
+| smolagents-tool | **65 %** | 63 % | — | — |
+
+Drei Interaktions-Befunde, die man ohne Messung garantiert falsch rät:
+
+1. **Prompt × Modus:** Die Beharrlichkeits-Instruktion hebt qwens
+   Function-Calling-Pfad massiv (native 42→58), lässt das Text-Protokoll
+   unberührt (48→48) — und **schadet** llama in jedem Modus (40→21,
+   Suchschleifen bis zum Turn-Limit, Verweigerungen 4/6→0/6).
+2. **Modell × Modus:** llama braucht API-Tool-Specs (@nt), qwen ist im
+   Text-Protokoll+think am stabilsten. Eine Config für alle gibt es nicht.
+3. **Verweigerungs-Disziplin ist orthogonal zum Score:** das minimal-Harness
+   hält 5–6/6 in jeder qwen-Config; llama-native fabriziert stattdessen
+   Tool-Ergebnisse. Wer nur pass@1 liest, übersieht das Produktionsrisiko.
+
+**Befund llama3.1:** Mit dem Text-Protokoll antwortet llama auf die deutsche
+Recherche-Instruktion mit *Meta-Plänen* („empfehle ich folgende Schritte…")
+statt zu handeln — 0 Tool-Calls, Protokoll formal korrekt. Prompt-Varianten
+ändern das nicht (Ablation gemessen); llamas Function-Calling-Training braucht
+Tool-Specs über die API. Ein Flag (`nativeToolCalling: true`) hebt llama von
+13 % auf 40 % — vor die naive Baseline (27 %). **Die Modus-Wahl pro Modell ist
+eine Harness-Fähigkeit: gleicher Loop, gleiche Memory, gleiche Guards.**
+
+**Befund Halluzination:** ollama-native mit llama *fabriziert Tool-Ergebnisse*
+(f09: erfundene JSON-Blöcke mit nicht existierenden Dateien wie
+„Beschluss-über-Nachlass.docx"). Das minimal-Harness verweigert dieselbe Frage
+6/6 sauber mit echten Quellenangaben — für den Unternehmenseinsatz ist das der
+entscheidende Unterschied.
+
+**Befund Robustheit (Validator-Fix):** qwen fusioniert mitten in Recherchen
+ACTION und TOOL zu einer Zeile (`ACTION: erp.query` + `ARGS`, ohne TOOL) —
+4/48 Läufe starben daran als `validation_failed`. Der Parser akzeptiert das
+Muster jetzt (eindeutige Intention), Regressionstest aus den geloggten
+Roh-Outputs, danach **0/48 abnormale Terminierungen**; dev-Suite 40/40
+unverändert (kein Tuning gegen die Frozen-Suite).
+
+**Befund smolagents-Gap (qwen):** Der ToolCallingAgent-Scaffold von HF
+erzwingt Beharrlichkeit strukturell (`final_answer` ist ein Tool und der
+einzige Ausweg aus dem Loop) und liegt damit bei 63–65 %. Unsere beste
+qwen-Config erreicht 50 % — die Lücke ist Recherche-Ausdauer, nicht
+Korrektheit oder Disziplin. Sie ist benannt, root-caused und der nächste
+Hebel (Persistenz-Scaffold als opt-in Loop-Feature) ist definiert.
+
+**Power-Check (Seeds 1004–1006, je n=48 zusätzlich):** Der auffällige
+native-p2-Wert (58 %) fiel auf frischen Seeds auf 46 % — kombiniert über
+6 Seeds: **native-p2 52 % (50/96) vs. minimal@nt-p2 49 % (47/96)**. Harness
+und nackte Baseline sind auf dem FC-Pfad statistisch gleichauf; der Harness
+kostet keine Genauigkeit und bringt Recovery, Persistenz, Approval, DSGVO und
+Betrieb mit. Lehre: Einzelzellen mit n=48 haben ±14 pp Unsicherheit —
+Ausreißer erst replizieren, dann interpretieren.
+
+## Urteil (Stand 2026-07-10, nach der Wettbewerbs-Kampagne)
+
+**Gegen die naive Baseline (die Kern-These) ist der Fall entschieden:**
+Frozen-Suite llama +36 pp signifikant (92,4 % vs. 56,4 %, halbe Latenz);
+Company-Test llama 40 % vs. 27 % (richtige Modus-Config vs. out-of-the-box);
+qwen gleichauf im Score, aber ohne die 4/48 toten Läufe, mit 5–6/6
+Verweigerungsdisziplin und ohne fabrizierte Tool-Ergebnisse.
+
+**Gegen smolagents:** Auf llama ist das Harness praktisch konkurrenzlos
+(smolagents setzt starkes Instruction-Following voraus). Auf qwen führt
+smolagents-tool die Recherche-pass@1 an (63–65 % vs. 50 %) — die Ursache
+(struktureller Beharrlichkeits-Scaffold) ist identifiziert; smolagents bringt
+dafür weder Persistenz noch Auth/Multi-User, DSGVO-API, Approval-Gate,
+Streaming noch Zero-Dependency-Betrieb mit — genau die Anforderungen, an
+denen Mittelstands-Deployments real scheitern.
+
+**Empfohlene Produktions-Configs (gemessen):**
+
+| Modell | Config | Ergebnis |
+|---|---|---|
+| qwen3:8b | Text-Protokoll + think + verifyFinalAnswer, Prompt p1 | 50 % pass@1, 6/6 Verweigerung |
+| llama3.1 | `nativeToolCalling: true`, Prompt p1 (keine Beharrlichkeits-Floskel!) | 40 % pass@1 |
 
 **Was die ehrliche Grenze ist:** tiefe Multi-Quellen-Recherche (ACL-Abgleich
 gegen Verarbeitungsverzeichnis, Tribal Knowledge in Mails finden) überfordert
-ein 8B-Modell auch mit gutem Harness — 42 % pass@1 sind keine unbeaufsichtigte
+ein 8B-Modell auch mit gutem Harness — ~50 % pass@1 sind keine unbeaufsichtigte
 Sachbearbeitung. Realistischer Einsatz heute: **assistierte Recherche mit
 Quellenangaben und Approval-Gate** (der Mensch prüft), oder eng zugeschnittene
 Einzelaufgaben (Extraktion: 100/100). Für autonome Recherche-Qualität braucht
 es ein 14B+-Modell und damit >16 GB VRAM (oder NUM_PARALLEL=1) — dokumentiert
 in docs/deployment.md.
+
+**Nächste Hebel (definiert, nicht begonnen):** (1) Persistenz-Scaffold als
+opt-in Loop-Feature (die smolagents-Lücke), (2) qwen3:14b via
+NUM_PARALLEL=1, (3) smolagents-Vergleich auf llama vervollständigen.
