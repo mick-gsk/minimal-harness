@@ -53,6 +53,23 @@ bibliothekseigene Knöpfe, keine Task-Umformulierung):
 | 2026-07-10 | `CodeAgent` (HF-Empfehlung, Kernthese der Bibliothek) als 5. Kontrahent | qwen 60 %, llama 54 % (suite-v2-Probe) |
 | _offen_ | `additional_authorized_imports` für CodeAgent (häufiger Off-the-shelf-Fail: blockierte Standard-Imports) | ausstehend |
 
-## Ablation-Ergebnisse (Probe, Seed 1001, suite-v2)
+## Ablation-Ergebnisse (Probe, Seed 1001, 2026-07-10)
 
-_Wird nach dem Prompt-Ablation-Lauf ergänzt._
+Drei System-Prompt-Varianten für minimal (default / bare / paraphrase), sonst
+identischer Aufbau, auf beiden Suiten:
+
+| Variante | v2 qwen | v2 llama | BFCL qwen | BFCL llama (simple) | BFCL llama (irrelevance) |
+|---|---|---|---|---|---|
+| minimal@default | **47/50** | **46/50** | 83/100 | 42/50 | 13/50 |
+| minimal@bare | 41/50 | 41/50 | **85/100** | 45/50 | 3/50 |
+| minimal@paraphrase | 46/50 | 42/50 | 83/100 | 42/50 | 5/50 |
+| _(ollama-native zum Vergleich)_ | _43/50_ | _26/50_ | _83/100_ | _29/50_ | _26/50_ |
+
+**Befund zu Einwand 4 (Prompt-Verschränkung):**
+- **qwen3:8b:** Uplift formulierungs-insensitiv (83–85/100 über alle Varianten) — der Gewinn gehört dem Mechanismus, nicht der Prompt-Passung.
+- **llama3.1:** Der Kern-Uplift (Tool-Calling, BFCL simple) hält über alle Varianten (42–45/50, jede ≫ native 29/50). Die irrelevance-Schwäche ist **Scaffold-inhärent** und wird ohne Prompt-Anleitung *schlimmer* (Ø bis 2,12 Tool-Calls wo 0 richtig wäre) — der verdächtigte Default-Prompt *mildert* sie. Kein Heimspiel-Artefakt; stattdessen Produkt-Fix abgeleitet (Protokollblock benennt den No-Tool-Pfad explizit, Commit 86efed7), Validierung auf BFCL + v2-Regression dokumentiert unten.
+
+**Befund zu Einwand 1 auf neutralem Terrain (BFCL, echte Berkeley-Daten):**
+- llama3.1 simple: minimal 41/50 vs. native 29/50 (**+24 pp auf Dritt-Tasks**) — der Uplift ist kein Suite-Artefakt.
+- qwen3:8b gesamt: 83/100 = 83/100 — auf starken Tool-Calling-Modellen hilft und schadet das Harness auf Single-Call-Tasks nicht.
+- llama3.1 irrelevance: minimal 11/50 vs. native 26/50 — ehrlicher Negativ-Befund, siehe Fix oben.
