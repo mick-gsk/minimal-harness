@@ -41,6 +41,13 @@ export interface AgentLoopDeps {
    * additional call. Defaults to false.
    */
   verifyFinalAnswer?: boolean;
+  /**
+   * When true, the native path executes all accepted tool calls of a turn
+   * concurrently (k independent calls of latency t: ~t instead of k*t).
+   * Results are written in call order regardless of completion order, so
+   * transcripts stay reproducible. Defaults to false (sequential).
+   */
+  parallelToolCalls?: boolean;
 }
 
 export class DefaultAgentLoop implements AgentLoop {
@@ -170,18 +177,37 @@ export class DefaultAgentLoop implements AgentLoop {
         const agentTurn: AgentTurn = { turnIndex: turn, rawAssistantOutput: rawOutput, toolCalls: [] };
         await memory.append(sessionId, { role: "assistant", content: rawOutput, timestamp: Date.now() });
 
+        // Policy check for the whole batch before anything starts: a violation
+        // must not leave a half-executed turn behind.
         for (const call of accepted) {
           if (!isToolAllowed(call.name, this.policy)) {
             sm.transition("ERROR"); // executing_tool -> failed
             throw new AgentError(`Tool '${call.name}' is not allowed by policy`);
           }
-          logger.debug(`[turn ${turn}] Executing tool (native): ${call.name}`);
-          const record = await this.executeToolSafely(call.name, call.arguments);
+        }
+
+        // executeToolSafely never rejects (failures become error records), so
+        // Promise.all cannot abort the batch. Results arrive in call order.
+        let records: ToolExecutionRecord[];
+        if (this.deps.parallelToolCalls) {
+          logger.debug(`[turn ${turn}] Executing ${accepted.length} tool call(s) in parallel`);
+          records = await Promise.all(
+            accepted.map((call) => this.executeToolSafely(call.name, call.arguments)),
+          );
+        } else {
+          records = [];
+          for (const call of accepted) {
+            logger.debug(`[turn ${turn}] Executing tool (native): ${call.name}`);
+            records.push(await this.executeToolSafely(call.name, call.arguments));
+          }
+        }
+
+        for (const [i, record] of records.entries()) {
           toolTrace.push(record);
           agentTurn.toolCalls.push(record);
           await memory.append(sessionId, {
             role: "tool",
-            content: JSON.stringify({ tool: call.name, result: record.output ?? record.error }),
+            content: JSON.stringify({ tool: accepted[i]!.name, result: record.output ?? record.error }),
             timestamp: Date.now(),
           });
         }

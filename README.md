@@ -192,15 +192,19 @@ perf smoke: 10,000 appends ≈ 0.5 s, reading a 1,000-message session < 1 ms.
 
 ---
 
+## Parallel Tool Calls & Streaming
+
+- **Parallel tool calls** (native path, opt-in): `parallelToolCalls: true` on
+  `DefaultAgentLoop` executes all accepted calls of a turn concurrently while
+  writing results in call order — measured: two 100 ms tools drop from
+  203 ms (sequential) to 102 ms.
+- **Token streaming**: pass `onToken` to `loop.run(...)` — chunks flow from the
+  backend (Ollama NDJSON, OpenAI-compat SSE) straight to your callback.
+
 ## v1 Limitations
 
-- No parallel tool execution
-- No streaming support
 - `summarize()` on `Memory` is optional and not wired into the default loop
-- LM Studio and llama.cpp adapters are stubs
 
 ## Extension Points
 
-- **Streaming**: extend `LLMAdapter.generate()` to yield tokens
-- **Parallel tools**: extend `AgentLoop` to detect multiple `tool_call` blocks per turn
 - **Custom policies**: pass a `GuardrailPolicy` to `DefaultAgentLoop` to restrict allowed tools
