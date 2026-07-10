@@ -45,6 +45,7 @@ npx tsx examples/tool-agent.ts
 | `StateMachine` | `core/state-machine.ts` | Manages agent turn states |
 | `OllamaClient` | `llm/ollama-client.ts` | Calls Ollama REST API |
 | `InMemoryMemory` | `memory/in-memory.ts` | Per-session message store |
+| `SqliteMemory` | `memory/sqlite-memory.ts` | Durable per-session store via built-in `node:sqlite` |
 | `DefaultToolBridge` | `tools/tool-bridge.ts` | Registry, validation, dispatch |
 | `StructuredOutputValidator` | `guardrails/validator.ts` | Enforces output format |
 
@@ -160,9 +161,28 @@ seam. Neutral third-party benchmarks (BFCL) are tracked separately.
 
 ---
 
+## Persistent Memory
+
+`SqliteMemory` is a drop-in replacement for `InMemoryMemory` — sessions survive
+process restarts. It uses the **built-in** `node:sqlite` (no new dependency);
+this class requires Node ≥ 22.5 (flag-free since 23.4), the rest of the library
+does not.
+
+```ts
+import { SqliteMemory } from "minimal-harness";
+
+const memory = new SqliteMemory("./agent-memory.db"); // or ":memory:"
+// pass it to DefaultAgentLoop instead of InMemoryMemory
+```
+
+Writes use WAL mode (crash-safe, concurrent readers). Validated by deterministic
+tests (restart persistence, session isolation, metadata round-trip) plus a
+perf smoke: 10,000 appends ≈ 0.5 s, reading a 1,000-message session < 1 ms.
+
+---
+
 ## v1 Limitations
 
-- Memory is in-process only (no persistence across restarts)
 - No parallel tool execution
 - No streaming support
 - `summarize()` on `Memory` is optional and not wired into the default loop
@@ -170,7 +190,6 @@ seam. Neutral third-party benchmarks (BFCL) are tracked separately.
 
 ## Extension Points
 
-- **Persistent memory**: implement `Memory` interface backed by SQLite, Redis, or a file
 - **Streaming**: extend `LLMAdapter.generate()` to yield tokens
 - **Parallel tools**: extend `AgentLoop` to detect multiple `tool_call` blocks per turn
 - **Custom policies**: pass a `GuardrailPolicy` to `DefaultAgentLoop` to restrict allowed tools

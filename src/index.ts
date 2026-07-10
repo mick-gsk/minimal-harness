@@ -12,6 +12,7 @@ export { LlamaCppAdapter } from "./llm/llamacpp-adapter.js";
 
 // Memory
 export { InMemoryMemory } from "./memory/in-memory.js";
+export { SqliteMemory } from "./memory/sqlite-memory.js";
 export { extractiveSummary } from "./memory/summarizer.js";
 
 // Tools
