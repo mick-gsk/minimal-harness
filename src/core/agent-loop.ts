@@ -136,7 +136,13 @@ export class DefaultAgentLoop implements AgentLoop {
     schema: ToolInputSchema,
   ): { ok: true; value: unknown } | { ok: false; error: string } {
     const unfenced = candidate.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/, "$1");
-    const parsed = safeParseJson(unfenced);
+    let parsed = safeParseJson(unfenced);
+    if (!parsed.ok) {
+      // Models often wrap the object in stray text; the first {...} block is
+      // the answer if it validates.
+      const embedded = unfenced.match(/\{[\s\S]*\}/);
+      if (embedded) parsed = safeParseJson(embedded[0]);
+    }
     if (!parsed.ok) return { ok: false, error: "the answer is not valid JSON" };
     const violation = validateToolInput(parsed.value, schema);
     return violation ? { ok: false, error: violation } : { ok: true, value: parsed.value };
@@ -185,7 +191,7 @@ export class DefaultAgentLoop implements AgentLoop {
     // The schema contract goes into the system prompt so the model knows the
     // target format from turn one instead of learning it through retries.
     const systemInstruction = responseSchema
-      ? `${baseInstruction}\n\nYour final answer must be a single valid JSON object matching this JSON schema:\n${JSON.stringify(responseSchema)}`
+      ? `${baseInstruction}\n\nYour final answer must be a single valid JSON object matching this JSON schema:\n${JSON.stringify(responseSchema)}\nOutput only the JSON object as the answer — no prose around it.`
       : baseInstruction;
 
     const toolTrace: ToolExecutionRecord[] = [];
@@ -364,6 +370,14 @@ export class DefaultAgentLoop implements AgentLoop {
       let retryCount = 0;
       let lastOutput = rawOutput;
 
+      // Schema mode: a protocol-invalid reply that already contains
+      // schema-valid JSON IS the deliverable — models regularly fuse the two
+      // prompt contracts (e.g. "ACTION/ANSWER\n{...}"). Rescue it instead of
+      // burning retries on protocol dressing.
+      if (parsed.kind === "invalid" && responseSchema && DefaultAgentLoop.parseStructured(rawOutput, responseSchema).ok) {
+        parsed = { kind: "final", finalText: rawOutput };
+      }
+
       while (parsed.kind === "invalid" && retryCount < defaultRetryStrategy.maxRetries) {
         retryCount++;
         logger.warn(`[turn ${turn}] Output invalid, retry ${retryCount}`);
@@ -374,6 +388,11 @@ export class DefaultAgentLoop implements AgentLoop {
         lastOutput = retryResponse.content;
         sm.transition("LLM_RESPONSE"); // retrying -> generating
         parsed = parseAssistantOutput(lastOutput, validator);
+      }
+
+      // Same rescue for the retry output (see above).
+      if (parsed.kind === "invalid" && responseSchema && DefaultAgentLoop.parseStructured(lastOutput, responseSchema).ok) {
+        parsed = { kind: "final", finalText: lastOutput };
       }
 
       const agentTurn: AgentTurn = { turnIndex: turn, rawAssistantOutput: lastOutput, toolCalls: [] };

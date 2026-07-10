@@ -86,6 +86,23 @@ describe("structured extraction (responseSchema)", () => {
     expect(result.structuredAnswer).toEqual({ invoiceNumber: "R-1", total: 10 });
   });
 
+  it("rescues a bare-JSON reply that skipped the text protocol", async () => {
+    // Regression: extraction probe 2026-07-10 — llama3.1 fused the two prompt
+    // contracts into "ACTION/ANSWER\n{json}"; the JSON was right, the protocol
+    // wrapper was not. Schema-valid JSON IS the deliverable in schema mode.
+    const loop = makeLoop(['{"invoiceNumber":"R-3","total":42}']);
+    const result = await loop.run({ sessionId: "s", userMessage: "extract", responseSchema: invoiceSchema });
+    expect(result.terminatedReason).toBe("final_answer");
+    expect(result.structuredAnswer).toEqual({ invoiceNumber: "R-3", total: 42 });
+  });
+
+  it("rescues schema-valid JSON wrapped in mangled protocol text", async () => {
+    const loop = makeLoop(['ACTION/ANSWER\n{\n  "invoiceNumber": "R-11-2026",\n  "total": 238.0\n}']);
+    const result = await loop.run({ sessionId: "s", userMessage: "extract", responseSchema: invoiceSchema });
+    expect(result.terminatedReason).toBe("final_answer");
+    expect(result.structuredAnswer).toEqual({ invoiceNumber: "R-11-2026", total: 238.0 });
+  });
+
   it("terminates with validation_failed when the model never conforms", async () => {
     const loop = makeLoop(Array(6).fill("ACTION: final_answer\nANSWER: still not json"));
     const result = await loop.run({ sessionId: "s", userMessage: "extract", responseSchema: invoiceSchema });
