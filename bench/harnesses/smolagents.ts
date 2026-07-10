@@ -93,11 +93,19 @@ function makeSmolagentsHarness(
       const bridge = await startWorldBridge(tools);
       try {
         const apiBase = `${ctx.model.baseUrl.replace(/\/$/, "")}/v1`;
+        // Equal-effort knob (bench/FAIRNESS.md): BENCH_SMOLAGENTS_IMPORTS="math,json"
+        // authorizes extra CodeAgent imports via the library's own option.
+        // Unset = off-the-shelf defaults (the official claim).
+        const codeImports = (process.env.BENCH_SMOLAGENTS_IMPORTS ?? "")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
         const job = {
           prompt: task.prompt,
           maxSteps: task.maxTurns,
           bridgeUrl: bridge.url,
           agentType,
+          ...(agentType === "code" && codeImports.length > 0 ? { codeImports } : {}),
           model: {
             id: ctx.model.name,
             apiBase,

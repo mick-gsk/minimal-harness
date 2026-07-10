@@ -137,7 +137,11 @@ def main() -> None:
         )
         tools = build_tools(job["tools"], job["bridgeUrl"], counter)
         agent_cls = CodeAgent if job.get("agentType") == "code" else ToolCallingAgent
-        agent = agent_cls(tools=tools, model=model, verbosity_level=0)
+        agent_kwargs = {}
+        if job.get("agentType") == "code" and job.get("codeImports"):
+            # Equal-effort knob (bench/FAIRNESS.md): library-provided option only.
+            agent_kwargs["additional_authorized_imports"] = job["codeImports"]
+        agent = agent_cls(tools=tools, model=model, verbosity_level=0, **agent_kwargs)
 
         t0 = time.time()
         answer = agent.run(job["prompt"], max_steps=max_steps)
