@@ -1,0 +1,448 @@
+<title>minimal-harness — Benchmark</title>
+<style>
+  :root {
+    --plane:#f6f7f9; --surface:#ffffff; --surface-2:#fbfcfd;
+    --ink:#0d1117; --ink-2:#47505f; --muted:#8b93a1;
+    --hair:#e7eaef; --hair-strong:#d6dbe2;
+    --accent:#2a78d6; --accent-text:#1f63c0;
+    --naive:#b3bac6; --native:#7c8798; --minimal:#2a78d6;
+    --good:#0b7a2e;
+    --font-sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --font-mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+    --maxw:1040px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --plane:#0c0e12; --surface:#14171c; --surface-2:#181c22;
+      --ink:#f2f4f7; --ink-2:#b7bfcc; --muted:#7e8896;
+      --hair:#262b33; --hair-strong:#343b45;
+      --accent:#3987e5; --accent-text:#7fb2f2;
+      --naive:#464d59; --native:#7a8598; --minimal:#3987e5;
+      --good:#35c85f;
+    }
+  }
+  :root[data-theme="light"] {
+    --plane:#f6f7f9; --surface:#ffffff; --surface-2:#fbfcfd;
+    --ink:#0d1117; --ink-2:#47505f; --muted:#8b93a1;
+    --hair:#e7eaef; --hair-strong:#d6dbe2;
+    --accent:#2a78d6; --accent-text:#1f63c0;
+    --naive:#b3bac6; --native:#7c8798; --minimal:#2a78d6;
+    --good:#0b7a2e;
+  }
+  :root[data-theme="dark"] {
+    --plane:#0c0e12; --surface:#14171c; --surface-2:#181c22;
+    --ink:#f2f4f7; --ink-2:#b7bfcc; --muted:#7e8896;
+    --hair:#262b33; --hair-strong:#343b45;
+    --accent:#3987e5; --accent-text:#7fb2f2;
+    --naive:#464d59; --native:#7a8598; --minimal:#3987e5;
+    --good:#35c85f;
+  }
+
+  * { box-sizing:border-box; }
+  body { margin:0; }
+  .page {
+    background:var(--plane); color:var(--ink);
+    font-family:var(--font-sans);
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+    line-height:1.5; padding:clamp(20px,4vw,56px) clamp(16px,4vw,40px);
+    min-height:100vh; overflow-x:clip;
+  }
+  .wrap { max-width:var(--maxw); margin:0 auto; }
+
+  .eyebrow {
+    font-family:var(--font-mono); font-size:12px; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--muted);
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  }
+  .eyebrow .dot { width:6px; height:6px; border-radius:50%; background:var(--accent); display:inline-block; }
+  .eyebrow .tag {
+    color:var(--ink-2); border:1px solid var(--hair-strong); border-radius:999px;
+    padding:2px 8px; letter-spacing:.08em;
+  }
+
+  h1 {
+    font-size:clamp(27px,4.4vw,44px); line-height:1.08; letter-spacing:-.018em;
+    font-weight:650; margin:16px 0 0; text-wrap:balance; max-width:20ch;
+  }
+  h1 .hl { color:var(--accent-text); }
+  .lede {
+    margin:14px 0 0; font-size:clamp(15px,1.7vw,18px); color:var(--ink-2);
+    max-width:62ch; text-wrap:pretty;
+  }
+
+  section { margin-top:clamp(30px,5vw,52px); }
+  .sec-label {
+    font-family:var(--font-mono); font-size:11.5px; letter-spacing:.13em;
+    text-transform:uppercase; color:var(--muted); margin:0 0 14px;
+    display:flex; align-items:baseline; gap:10px;
+  }
+  .sec-label::after { content:""; flex:1; height:1px; background:var(--hair); }
+
+  /* hero tiles */
+  .heroes { display:grid; grid-template-columns:repeat(2,1fr); gap:16px; }
+  @media (max-width:560px){ .heroes { grid-template-columns:1fr; } }
+  .tile {
+    background:var(--surface); border:1px solid var(--hair);
+    border-radius:14px; padding:20px 22px; position:relative; overflow:hidden;
+  }
+  .tile .model {
+    font-family:var(--font-mono); font-size:13px; color:var(--ink-2);
+    letter-spacing:.02em;
+  }
+  .tile .big {
+    font-size:clamp(46px,7vw,60px); font-weight:660; letter-spacing:-.03em;
+    line-height:1; margin:8px 0 2px; font-variant-numeric:tabular-nums;
+    color:var(--ink);
+  }
+  .tile .big .pct { font-size:.42em; font-weight:600; color:var(--muted); margin-left:2px; letter-spacing:0; }
+  .tile .cap { font-size:13.5px; color:var(--ink-2); }
+  .tile .cap b { color:var(--accent-text); font-weight:600; }
+  .chips { display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }
+  .chip {
+    font-family:var(--font-mono); font-size:12px; padding:3px 9px; border-radius:999px;
+    border:1px solid var(--hair-strong); color:var(--ink-2);
+    display:inline-flex; align-items:center; gap:5px; white-space:nowrap;
+  }
+  .chip.up { color:var(--good); border-color:color-mix(in srgb,var(--good) 34%,var(--hair-strong)); }
+  .chip .car { font-size:9px; }
+  /* mini track */
+  .track { margin-top:16px; height:26px; position:relative; }
+  .track .rail { position:absolute; left:0; right:0; top:11px; height:4px; border-radius:4px; background:var(--hair); }
+  .track .fill { position:absolute; left:0; top:11px; height:4px; border-radius:4px; background:var(--accent); opacity:.28; }
+  .track .mk { position:absolute; top:7px; width:12px; height:12px; margin-left:-6px; border-radius:50%; background:var(--surface); border:2px solid var(--native); }
+  .track .mk.n { border-color:var(--naive); }
+  .track .mk.m { border-color:var(--minimal); background:var(--minimal); box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent); }
+
+  /* chart card */
+  .card {
+    background:var(--surface); border:1px solid var(--hair); border-radius:16px;
+    padding:22px clamp(14px,2.4vw,26px) 20px;
+  }
+  .chart-head { display:flex; justify-content:space-between; align-items:baseline; gap:16px; flex-wrap:wrap; margin-bottom:4px; }
+  .chart-title { font-size:16px; font-weight:620; letter-spacing:-.01em; }
+  .chart-sub { font-size:13px; color:var(--muted); }
+  .legend { display:flex; gap:16px; flex-wrap:wrap; margin:6px 0 8px; }
+  .legend .it { display:inline-flex; align-items:center; gap:8px; font-size:13px; color:var(--ink-2); font-family:var(--font-mono); }
+  .legend .sw { width:11px; height:11px; border-radius:3px; display:inline-block; }
+  .chart-shell { position:relative; }
+  svg.chart { width:100%; height:auto; display:block; overflow:visible; }
+  .grid-line { stroke:var(--hair); stroke-width:1; }
+  .base-line { stroke:var(--hair-strong); stroke-width:1; }
+  .y-tick { fill:var(--muted); font:500 12px/1 var(--font-mono); }
+  .x-label { fill:var(--ink); font:600 13px/1 var(--font-mono); }
+  .bar { transition:transform .7s cubic-bezier(.22,.61,.36,1); transform-origin:center bottom; }
+  .bar-val { fill:var(--ink); font:600 12.5px/1 var(--font-mono); font-variant-numeric:tabular-nums; }
+  .ci { stroke:var(--ink-2); stroke-width:1.6; opacity:.85; }
+  @media (prefers-reduced-motion: reduce){ .bar { transition:none; } }
+
+  .tip {
+    position:absolute; pointer-events:none; z-index:5; opacity:0;
+    transform:translate(-50%,-8px); transition:opacity .12s;
+    background:var(--ink); color:var(--plane);
+    border-radius:9px; padding:9px 11px; font-size:12px; min-width:150px;
+    box-shadow:0 6px 24px rgba(0,0,0,.22);
+  }
+  .tip.on { opacity:1; }
+  .tip .th { font-family:var(--font-mono); font-size:11px; opacity:.72; letter-spacing:.03em; margin-bottom:4px; }
+  .tip .tv { font-size:15px; font-weight:650; font-family:var(--font-mono); }
+  .tip .tr { display:flex; justify-content:space-between; gap:14px; margin-top:5px; font-family:var(--font-mono); opacity:.85; }
+  .tip .tr span:last-child { font-variant-numeric:tabular-nums; }
+
+  .table-toggle {
+    margin-top:14px; background:none; border:1px solid var(--hair-strong);
+    color:var(--ink-2); font-family:var(--font-mono); font-size:12px;
+    padding:6px 12px; border-radius:8px; cursor:pointer; letter-spacing:.03em;
+  }
+  .table-toggle:hover { border-color:var(--muted); color:var(--ink); }
+  .table-toggle:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .data-table { margin-top:14px; overflow-x:auto; display:none; }
+  .data-table.on { display:block; }
+  table { border-collapse:collapse; width:100%; font-size:13px; min-width:560px; }
+  th,td { text-align:right; padding:8px 12px; border-bottom:1px solid var(--hair); font-variant-numeric:tabular-nums; }
+  th:first-child,td:first-child { text-align:left; font-variant-numeric:normal; }
+  thead th { color:var(--muted); font-weight:600; font-family:var(--font-mono); font-size:11.5px; text-transform:uppercase; letter-spacing:.06em; }
+  td.harness { font-family:var(--font-mono); color:var(--ink); }
+  tr.is-min td { color:var(--ink); font-weight:600; }
+  tr.is-min td.harness { color:var(--accent-text); }
+
+  /* methodology */
+  .methods { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; }
+  @media (max-width:820px){ .methods { grid-template-columns:repeat(2,1fr); } }
+  @media (max-width:420px){ .methods { grid-template-columns:1fr; } }
+  .m {
+    background:var(--surface); border:1px solid var(--hair); border-radius:12px;
+    padding:16px 16px 15px;
+  }
+  .m .mv { font-size:22px; font-weight:640; letter-spacing:-.01em; font-family:var(--font-mono); }
+  .m .ml { font-size:12.5px; color:var(--ink-2); margin-top:5px; line-height:1.35; }
+
+  /* footnote / cta */
+  .foot { margin-top:clamp(26px,4vw,40px); border-top:1px solid var(--hair); padding-top:22px; }
+  .note { font-size:13px; color:var(--ink-2); max-width:78ch; line-height:1.6; }
+  .note code { font-family:var(--font-mono); font-size:.92em; background:var(--surface-2); border:1px solid var(--hair); border-radius:5px; padding:1px 5px; color:var(--ink); }
+  .note .next { color:var(--ink); font-weight:600; }
+  .cta {
+    display:flex; justify-content:space-between; align-items:center; gap:16px;
+    flex-wrap:wrap; margin-top:20px;
+  }
+  .cta .who { font-size:14px; }
+  .cta .who b { color:var(--ink); }
+  .cta .who span { color:var(--muted); }
+  .cta .repo {
+    font-family:var(--font-mono); font-size:13px; color:var(--accent-text);
+    text-decoration:none; border:1px solid var(--hair-strong); border-radius:8px;
+    padding:7px 13px;
+  }
+  .cta .repo:hover { border-color:var(--accent); }
+</style>
+
+<div class="page">
+  <div class="wrap">
+
+    <header>
+      <div class="eyebrow">
+        <span class="dot"></span> Agent-Harness Benchmark
+        <span class="tag">suite-v1</span>
+        <span class="tag">2026-07-09</span>
+      </div>
+      <h1>A minimal harness makes local LLMs <span class="hl">reliable</span> at tool-calling.</h1>
+      <p class="lede">Same model, same tasks — measured through three harnesses. A ~1&nbsp;kLOC TypeScript
+        harness with a prompt-based tool protocol, single-call turns, and retry/recovery lifts open
+        local models to near-ceiling task success. Deterministically scored, with confidence intervals.</p>
+    </header>
+
+    <!-- HERO -->
+    <section aria-label="Headline results">
+      <div class="heroes">
+        <div class="tile">
+          <div class="model">qwen3:8b</div>
+          <div class="big">98<span class="pct">%</span></div>
+          <div class="cap">task success with <b>minimal-harness</b></div>
+          <div class="chips">
+            <span class="chip up"><span class="car">▲</span> +32&nbsp;pp vs naive</span>
+            <span class="chip"><span class="car">▲</span> +8&nbsp;pp vs native</span>
+          </div>
+          <div class="track" title="naive 66% · ollama-native 90% · minimal 98%">
+            <div class="rail"></div><div class="fill" style="width:98%"></div>
+            <div class="mk n" style="left:66%"></div>
+            <div class="mk" style="left:90%"></div>
+            <div class="mk m" style="left:98%"></div>
+          </div>
+        </div>
+        <div class="tile">
+          <div class="model">llama3.1:8b</div>
+          <div class="big">82<span class="pct">%</span></div>
+          <div class="cap">task success with <b>minimal-harness</b></div>
+          <div class="chips">
+            <span class="chip up"><span class="car">▲</span> +58&nbsp;pp vs naive</span>
+            <span class="chip"><span class="car">▲</span> +8&nbsp;pp vs native</span>
+          </div>
+          <div class="track" title="naive 24% · ollama-native 74% · minimal 82%">
+            <div class="rail"></div><div class="fill" style="width:82%"></div>
+            <div class="mk n" style="left:24%"></div>
+            <div class="mk" style="left:74%"></div>
+            <div class="mk m" style="left:82%"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CHART -->
+    <section aria-label="Harness comparison">
+      <p class="sec-label">Harness uplift — success rate by model</p>
+      <div class="card">
+        <div class="chart-head">
+          <div>
+            <div class="chart-title">Task success rate</div>
+            <div class="chart-sub">Higher is better · whiskers = 95% Wilson confidence interval · n = 50 runs / bar</div>
+          </div>
+        </div>
+        <div class="legend">
+          <span class="it"><span class="sw" style="background:var(--naive)"></span>naive <span style="color:var(--muted)">· illustrative floor</span></span>
+          <span class="it"><span class="sw" style="background:var(--native)"></span>ollama-native <span style="color:var(--muted)">· fair baseline</span></span>
+          <span class="it"><span class="sw" style="background:var(--minimal)"></span>minimal <span style="color:var(--muted)">· this harness</span></span>
+        </div>
+        <div class="chart-shell">
+          <svg class="chart" viewBox="0 0 760 430" role="img"
+               aria-label="Grouped bar chart of task success rate for qwen3:8b and llama3.1:8b across naive, ollama-native and minimal harnesses.">
+            <g id="grid"></g>
+            <g id="bars"></g>
+            <g id="xlabels"></g>
+          </svg>
+          <div class="tip" id="tip"></div>
+        </div>
+        <button class="table-toggle" id="tblBtn" aria-expanded="false">Show data table</button>
+        <div class="data-table" id="tbl">
+          <table>
+            <thead>
+              <tr><th>Model / harness</th><th>Success</th><th>95% CI</th><th>pass^5</th><th>Ø tokens</th><th>Ø latency</th></tr>
+            </thead>
+            <tbody id="tblBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- METHODOLOGY -->
+    <section aria-label="Methodology">
+      <p class="sec-label">How it was measured</p>
+      <div class="methods">
+        <div class="m"><div class="mv">50</div><div class="ml">runs per bar<br>10 tasks × 5 seeds</div></div>
+        <div class="m"><div class="mv">0.7</div><div class="ml">temperature, fixed<br>seeds 1001–1005</div></div>
+        <div class="m"><div class="mv">95%</div><div class="ml">Wilson confidence<br>intervals on every rate</div></div>
+        <div class="m"><div class="mv">0</div><div class="ml">LLM judges<br>deterministic checks only</div></div>
+        <div class="m"><div class="mv">≈98%</div><div class="ml">run-to-run identical<br>on a repeated pass</div></div>
+      </div>
+    </section>
+
+    <!-- FOOTNOTE + CTA -->
+    <footer class="foot">
+      <p class="note">
+        <b>Reading the numbers honestly.</b> The dramatic gaps are measured against <code>naive</code> —
+        an illustrative floor with no retry or recovery. Against the fair out-of-the-box baseline
+        (<code>ollama-native</code>), <code>minimal</code> leads by <b>+8&nbsp;pp on both models</b>, which is
+        <b>not yet statistically significant</b> (confidence intervals overlap; more tasks land in suite-v2).
+        Its verified edge is reliability: prompt-based tool-calling that works on models without native
+        function-calling, and single-call turns that stop blind, guessed parallel calls.
+        <span class="next">Next: benchmarked head-to-head against LangChain &amp; smolagents.</span>
+      </p>
+      <div class="cta">
+        <div class="who"><b>Mick&nbsp;G.</b> <span>— AI Engineer · LLM integrations, agents &amp; automation</span></div>
+        <a class="repo" href="https://github.com/mick-gsk/minimal-harness" target="_blank" rel="noopener">github.com/mick-gsk/minimal-harness ↗</a>
+      </div>
+    </footer>
+
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var DATA = [
+    { model:"qwen3:8b", rows:[
+      { key:"naive",  label:"naive",  rate:66.0, lo:52.2, hi:77.6, pass5:60.0, tok:692,  lat:5027 },
+      { key:"native", label:"ollama-native", rate:90.0, lo:78.6, hi:95.7, pass5:90.0, tok:1202, lat:7748 },
+      { key:"minimal",label:"minimal", rate:98.0, lo:89.5, hi:99.6, pass5:90.0, tok:1719, lat:10368 }
+    ]},
+    { model:"llama3.1:8b", rows:[
+      { key:"naive",  label:"naive",  rate:24.0, lo:14.3, hi:37.4, pass5:20.0, tok:239, lat:574 },
+      { key:"native", label:"ollama-native", rate:74.0, lo:60.4, hi:84.1, pass5:60.0, tok:431, lat:944 },
+      { key:"minimal",label:"minimal", rate:82.0, lo:69.2, hi:90.2, pass5:80.0, tok:834, lat:949 }
+    ]}
+  ];
+  var FILL = { naive:"var(--naive)", native:"var(--native)", minimal:"var(--minimal)" };
+
+  // ---- chart geometry
+  var W=760, H=430, L=54, R=18, T=30, B=52;
+  var plotW=W-L-R, plotH=H-T-B, base=T+plotH;
+  function yFor(p){ return base - (p/100)*plotH; }
+  var SVGNS="http://www.w3.org/2000/svg";
+  function el(n,a){ var e=document.createElementNS(SVGNS,n); if(a) for(var k in a) e.setAttribute(k,a[k]); return e; }
+
+  var grid=document.getElementById("grid"),
+      barsG=document.getElementById("bars"),
+      xg=document.getElementById("xlabels");
+
+  // gridlines + y ticks
+  [0,25,50,75,100].forEach(function(p){
+    var y=yFor(p);
+    grid.appendChild(el("line",{x1:L,x2:L+plotW,y1:y,y2:y,class:p===0?"base-line":"grid-line"}));
+    var t=el("text",{x:L-10,y:y+4,"text-anchor":"end",class:"y-tick"}); t.textContent=p; grid.appendChild(t);
+  });
+
+  var groupW=plotW/2, barW=44, gap=8, content=3*barW+2*gap, pad=(groupW-content)/2;
+  var bars=[];
+
+  DATA.forEach(function(g,gi){
+    var gx=L+gi*groupW+pad;
+    g.rows.forEach(function(r,ri){
+      var x=gx+ri*(barW+gap), cx=x+barW/2;
+      var y=yFor(r.rate), h=base-y, r4=4;
+      // top-rounded bar path
+      var d="M"+x+","+base+" L"+x+","+(y+r4)+" Q"+x+","+y+" "+(x+r4)+","+y+
+            " L"+(x+barW-r4)+","+y+" Q"+(x+barW)+","+y+" "+(x+barW)+","+(y+r4)+" L"+(x+barW)+","+base+" Z";
+      var path=el("path",{d:d, fill:FILL[r.key], class:"bar"});
+      path.style.transform="scaleY(0)";
+      barsG.appendChild(path);
+      bars.push(path);
+      // CI whisker
+      var yl=yFor(r.lo), yh=yFor(r.hi);
+      var ci=el("g",{class:"ci"});
+      ci.appendChild(el("line",{x1:cx,x2:cx,y1:yh,y2:yl}));
+      ci.appendChild(el("line",{x1:cx-6,x2:cx+6,y1:yh,y2:yh}));
+      ci.appendChild(el("line",{x1:cx-6,x2:cx+6,y1:yl,y2:yl}));
+      barsG.appendChild(ci);
+      // value label (above the higher of bar-top / ci-high)
+      var vt=el("text",{x:cx,y:Math.min(y,yh)-9,"text-anchor":"middle",class:"bar-val"});
+      vt.textContent=r.rate+"%"; barsG.appendChild(vt);
+      // hover hit area
+      var hit=el("rect",{x:x-gap/2,y:T,width:barW+gap,height:plotH,fill:"transparent"});
+      hit.style.cursor="default";
+      (function(row,model,px){
+        hit.addEventListener("mouseenter",function(){ showTip(row,model,px,yFor(row.hi)); });
+        hit.addEventListener("mousemove",function(){ showTip(row,model,px,yFor(row.hi)); });
+        hit.addEventListener("mouseleave",hideTip);
+      })(r,g.model,cx);
+      barsG.appendChild(hit);
+    });
+    // group label
+    var lx=gx+content/2;
+    var tl=el("text",{x:lx,y:base+26,"text-anchor":"middle",class:"x-label"});
+    tl.textContent=g.model; xg.appendChild(tl);
+  });
+
+  // animate bars in
+  function play(){ bars.forEach(function(b,i){ setTimeout(function(){ b.style.transform="scaleY(1)"; }, 60+i*70); }); }
+  if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches){
+    bars.forEach(function(b){ b.style.transition="none"; b.style.transform="scaleY(1)"; });
+  } else if ("IntersectionObserver" in window){
+    var io=new IntersectionObserver(function(en){ en.forEach(function(e){ if(e.isIntersecting){ play(); io.disconnect(); } }); },{threshold:.25});
+    io.observe(document.querySelector("svg.chart"));
+  } else { play(); }
+
+  // ---- tooltip
+  var tip=document.getElementById("tip"), shell=document.querySelector(".chart-shell");
+  function showTip(r,model,cxUnits,cyUnits){
+    var svg=document.querySelector("svg.chart"), rect=svg.getBoundingClientRect(), srect=shell.getBoundingClientRect();
+    var sx=rect.width/W, sy=rect.height/H;
+    var px=(rect.left-srect.left)+cxUnits*sx;
+    var py=(rect.top-srect.top)+cyUnits*sy;
+    // clamp inside the shell so the tooltip never forces horizontal page scroll
+    var half=tip.offsetWidth/2 || 80;
+    px=Math.max(half+2, Math.min(px, srect.width-half-2));
+    tip.innerHTML=
+      '<div class="th">'+model+' · '+r.label+'</div>'+
+      '<div class="tv">'+r.rate.toFixed(1)+'%</div>'+
+      '<div class="tr"><span>95% CI</span><span>'+r.lo.toFixed(1)+'–'+r.hi.toFixed(1)+'</span></div>'+
+      '<div class="tr"><span>pass^5</span><span>'+r.pass5.toFixed(0)+'%</span></div>'+
+      '<div class="tr"><span>Ø tokens</span><span>'+r.tok.toLocaleString("en-US")+'</span></div>'+
+      '<div class="tr"><span>Ø latency</span><span>'+r.lat.toLocaleString("en-US")+' ms</span></div>';
+    tip.style.left=px+"px"; tip.style.top=py+"px"; tip.classList.add("on");
+  }
+  function hideTip(){ tip.classList.remove("on"); }
+
+  // ---- data table
+  var body=document.getElementById("tblBody");
+  DATA.forEach(function(g){
+    g.rows.forEach(function(r,ri){
+      var tr=document.createElement("tr");
+      if(r.key==="minimal") tr.className="is-min";
+      var name=(ri===0? g.model : "")+ (ri===0?" ":"");
+      tr.innerHTML=
+        '<td class="harness">'+(ri===0? '<b style="font-family:var(--font-sans);color:var(--ink)">'+g.model+'</b> · ' : '· ')+r.label+'</td>'+
+        '<td>'+r.rate.toFixed(1)+'%</td>'+
+        '<td>'+r.lo.toFixed(1)+'–'+r.hi.toFixed(1)+'</td>'+
+        '<td>'+r.pass5.toFixed(0)+'%</td>'+
+        '<td>'+r.tok.toLocaleString("en-US")+'</td>'+
+        '<td>'+r.lat.toLocaleString("en-US")+' ms</td>';
+      body.appendChild(tr);
+    });
+  });
+  var btn=document.getElementById("tblBtn"), tbl=document.getElementById("tbl");
+  btn.addEventListener("click",function(){
+    var on=tbl.classList.toggle("on");
+    btn.setAttribute("aria-expanded", on?"true":"false");
+    btn.textContent=on?"Hide data table":"Show data table";
+  });
+})();
+</script>
