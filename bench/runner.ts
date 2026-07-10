@@ -4,7 +4,7 @@
  *      BENCH_SUITE=dev (Tuning, stdout only) | v1 (legacy frozen) | default: suite-v2
  */
 import { mkdirSync, writeFileSync } from "node:fs";
-import { OllamaClient } from "../src/index.js";
+import { OllamaClient, OpenAiCompatAdapter } from "../src/index.js";
 import { DEFAULT_BASE_URL, DEFAULT_MODELS, SEEDS, TEMPERATURE } from "./config.js";
 import { suiteV1, SUITE_VERSION } from "./tasks/frozen/suite-v1.js";
 import { suiteV2, SUITE_V2_VERSION } from "./tasks/frozen/suite-v2.js";
@@ -41,7 +41,12 @@ const tasks =
 const seeds = process.env.BENCH_SEEDS
   ? process.env.BENCH_SEEDS.split(",").map((s) => Number(s.trim())).filter((n) => Number.isFinite(n))
   : SEEDS;
-const isProbe = seeds.join(",") !== SEEDS.join(",");
+// Any experiment switch (memory swap, adapter swap, harness filter) forces
+// probe mode: official reports only ever come from the default configuration.
+const experimentSwitch = Boolean(
+  process.env.BENCH_MEMORY || process.env.BENCH_ADAPTER || process.env.BENCH_HARNESSES,
+);
+const isProbe = seeds.join(",") !== SEEDS.join(",") || experimentSwitch;
 if (seeds.length === 0) {
   console.error(`✗ BENCH_SEEDS enthält keine gültigen Zahlen`);
   process.exit(1);
@@ -54,7 +59,9 @@ const suiteBase =
   : suiteEnv === "v1" ? SUITE_VERSION
   : suiteEnv === "bfcl" ? BFCL_SUITE_VERSION
   : SUITE_V2_VERSION;
-const suiteLabel = isProbe && !useDev ? `${suiteBase} PROBE (NICHT reportfähig, Seeds abweichend)` : suiteBase;
+const suiteLabel = isProbe && !useDev
+  ? `${suiteBase} PROBE (NICHT reportfähig: ${experimentSwitch ? "Experiment-Schalter aktiv" : "Seeds abweichend"})`
+  : suiteBase;
 
 // Preflight: Ollama reachable? Models present?
 const tagsRes = await fetch(`${baseUrl}/api/tags`).catch(() => null);
@@ -78,7 +85,7 @@ const models: ModelConfig[] = modelNames.map((name) => ({ name, baseUrl, tempera
 // "1" = both variants; "tool" = ToolCallingAgent only; "code" = CodeAgent only
 // (HF's recommended default and the library's actual thesis).
 const smolagentsMode = process.env.BENCH_SMOLAGENTS;
-const harnesses = [ollamaNativeHarness, naiveHarness, minimalHarness];
+let harnesses = [ollamaNativeHarness, naiveHarness, minimalHarness];
 if (smolagentsMode) {
   if (!["1", "tool", "code"].includes(smolagentsMode)) {
     console.error(`✗ Unbekannter BENCH_SMOLAGENTS-Wert '${smolagentsMode}' — erlaubt: 1, tool, code`);
@@ -96,6 +103,22 @@ if (smolagentsMode) {
   if (smolagentsMode !== "tool") harnesses.push(smolagentsCodeHarness);
 }
 
+// BENCH_HARNESSES filters the contestant list for targeted probes (e.g. the
+// SqliteMemory equivalence probe only needs minimal) — saves GPU time.
+if (process.env.BENCH_HARNESSES) {
+  const wanted = process.env.BENCH_HARNESSES.split(",").map((s) => s.trim());
+  harnesses = harnesses.filter((h) => wanted.includes(h.name));
+  if (harnesses.length === 0) {
+    console.error(`✗ BENCH_HARNESSES '${process.env.BENCH_HARNESSES}' matcht kein Harness`);
+    process.exit(1);
+  }
+}
+
+// BENCH_ADAPTER=openai-compat routes all LLM calls through OpenAiCompatAdapter
+// against Ollama's /v1 endpoint — the protocol-level validation for the
+// LM Studio / llama.cpp adapter without installing either.
+const useCompatAdapter = process.env.BENCH_ADAPTER === "openai-compat";
+
 console.log(
   `Bench: Suite ${suiteLabel} · Modelle: ${modelNames.join(", ")} · ` +
     `Harnesses: ${harnesses.map((h) => h.name).join(", ")} · Seeds: ${seeds.join(",")} · ` +
@@ -109,12 +132,19 @@ const records = await runMatrix({
   seeds,
   concurrency,
   llmFactory: (model, seed) =>
-    new OllamaClient({
-      baseUrl: model.baseUrl,
-      model: model.name,
-      defaultTemperature: model.temperature,
-      defaultSeed: seed,
-    }),
+    useCompatAdapter
+      ? new OpenAiCompatAdapter({
+          baseUrl: `${model.baseUrl}/v1`,
+          model: model.name,
+          defaultTemperature: model.temperature,
+          defaultSeed: seed,
+        })
+      : new OllamaClient({
+          baseUrl: model.baseUrl,
+          model: model.name,
+          defaultTemperature: model.temperature,
+          defaultSeed: seed,
+        }),
   onProgress: (done, total, label) => console.log(`[${done}/${total}] ${label}`),
 });
 
