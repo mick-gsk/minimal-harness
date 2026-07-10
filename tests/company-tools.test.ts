@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { decodeSmart, makeErpQueryTool, makeFsListTool, makeFsReadTool } from "../bench/company/tools.js";
+import { decodeSmart, makeErpQueryTool, makeFsListTool, makeFsReadTool, makeFsSearchTool } from "../bench/company/tools.js";
 
 const root = mkdtempSync(join(tmpdir(), "company-tools-"));
 mkdirSync(join(root, "fileserver"));
@@ -51,6 +51,35 @@ describe("company tools", () => {
     expect(out.rows[0]!.preis).toBeCloseTo(1.29);
     await expect(tool.execute({ sql: "DELETE FROM artikel" })).rejects.toThrow(/SELECT/);
     await expect(tool.execute({ sql: "UPDATE artikel SET preis=0" })).rejects.toThrow(/SELECT/);
+  });
+
+  it("fs.search ANDs multi-word queries at file level, matches per line", async () => {
+    const search = makeFsSearchTool(root);
+    // both terms in the same file (one in line 1, filename carries neither)
+    writeFileSync(join(root, "fileserver", "preis.eml"), "Preis DF-12040 vereinbart\nmit Wittenbrink besprochen\n");
+    const hit = (await search.execute({ query: "DF-12040 Wittenbrink" })) as { matches: string[] };
+    expect(hit.matches.some((m) => m.includes("preis.eml:1"))).toBe(true);
+    expect(hit.matches.some((m) => m.includes("preis.eml:2"))).toBe(true);
+    // terms spread across different files → no match
+    const miss = (await search.execute({ query: "DF-12040 Größe" })) as { matches: string[]; note?: string };
+    expect(miss.matches.filter((m) => m.includes("preis.eml"))).toHaveLength(0);
+  });
+
+  it("fs.search is case-insensitive, windows-1252 tolerant, and skips binary content", async () => {
+    const search = makeFsSearchTool(root);
+    const legacy = (await search.execute({ query: "größe" })) as { matches: string[] };
+    expect(legacy.matches.some((m) => m.includes("legacy.csv"))).toBe(true);
+    // binary file content is never searched; filename still findable
+    const bin = (await search.execute({ query: "binary.bin" })) as { matches: string[] };
+    expect(bin.matches).toEqual(["binary.bin (Dateiname)"]);
+  });
+
+  it("fs.search reports no-match note and blocks traversal", async () => {
+    const search = makeFsSearchTool(root);
+    const none = (await search.execute({ query: "gibtesnicht" })) as { matches: string[]; note?: string };
+    expect(none.matches).toHaveLength(0);
+    expect(none.note).toMatch(/no matches/);
+    await expect(search.execute({ query: "Nachlass", path: ".." })).rejects.toThrow(/escapes/);
   });
 
   it("decodeSmart falls back to windows-1252 only when utf-8 breaks", () => {
