@@ -70,6 +70,11 @@ Ollama evictet Modelle im Wechsel (sichtbar als sporadische 500er beim
 Embedding unter Last). Für den Mischbetrieb Chat+RAG: 16 GB einplanen oder
 `OLLAMA_CONTEXT_LENGTH` reduzieren (Kontext ist der größte VRAM-Hebel).
 
+Gemessen (16-GB-Karte): `qwen3:14b` mit 16k Kontext und `OLLAMA_NUM_PARALLEL=4`
+braucht 20,6 GB → 24 % laufen auf der CPU, ~6× langsamer. Für 14B-Recherche-
+Agenten entweder ≥24 GB VRAM einplanen oder `OLLAMA_NUM_PARALLEL=1` setzen
+(der KV-Cache skaliert mit den parallelen Slots).
+
 ## Betrieb
 
 - **Monitoring:** `GET /metrics` (Prometheus) — Requests, Laufzeiten,

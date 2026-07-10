@@ -144,5 +144,22 @@ die Ehrlichkeits-Instruktion + Fehler-Feedback wirken.
 
 | Modell | Ergebnis |
 |---|---|
-| qwen3:8b (think, temp 0.1, 16k ctx) | 20/48 (42 %) |
-| qwen3:14b (gleiche Config) | _läuft — wird eingetragen_ |
+| qwen3:8b (think, temp 0.1, 16k ctx) | 20/48 (42 %) pass@1; `unbeantwortbar` 5/6 verweigert |
+| qwen3:14b (gleiche Config) | **passt nicht**: 20,6 GB gesamt, nur 76 % im 16-GB-VRAM (16k ctx × OLLAMA_NUM_PARALLEL=4) → CPU-Spill, abgebrochen |
+
+## Urteil (Stand 2026-07-10)
+
+**Was produktionsreif ist:** die Harness-Mechanik. Protokoll-Recovery,
+Tool-Fehler-Feedback (falsches SQL → Schema-Discovery → korrekte Antwort),
+Halluzinations-Disziplin (5/6 Verweigerungen), Isolation, Persistenz, Betrieb —
+alle im Company-Test aufgedeckten **Harness**-Fehler wurden behoben und sind
+mit Regressionstests fixiert.
+
+**Was die ehrliche Grenze ist:** tiefe Multi-Quellen-Recherche (ACL-Abgleich
+gegen Verarbeitungsverzeichnis, Tribal Knowledge in Mails finden) überfordert
+ein 8B-Modell auch mit gutem Harness — 42 % pass@1 sind keine unbeaufsichtigte
+Sachbearbeitung. Realistischer Einsatz heute: **assistierte Recherche mit
+Quellenangaben und Approval-Gate** (der Mensch prüft), oder eng zugeschnittene
+Einzelaufgaben (Extraktion: 100/100). Für autonome Recherche-Qualität braucht
+es ein 14B+-Modell und damit >16 GB VRAM (oder NUM_PARALLEL=1) — dokumentiert
+in docs/deployment.md.
