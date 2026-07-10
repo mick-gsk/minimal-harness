@@ -182,6 +182,17 @@ async function runFact(fact: CompanyFact, seed: number): Promise<FactRunResult> 
     promptBuilder: new DefaultPromptBuilder(),
     systemInstruction: SYSTEM_INSTRUCTION,
     ...(HARNESS === "minimal@nt" ? { nativeToolCalling: true } : {}),
+    // Research config: up to 4 tool calls per turn, executed in parallel.
+    // 4 because tool results land in context: 4 reads x ~1.5k tokens ≈ 6k
+    // per turn still fits the 16k window with memory folding; smolagents'
+    // CodeAgent wins exactly by batching lookups — this is the same lever.
+    ...(HARNESS === "minimal@nt4"
+      ? {
+          nativeToolCalling: true,
+          parallelToolCalls: true,
+          policy: { maxToolCallsPerTurn: 4, allowedTools: [], requireStructuredOutput: true },
+        }
+      : {}),
   });
 
   try {
