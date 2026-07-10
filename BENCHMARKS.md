@@ -1,31 +1,28 @@
 # BENCHMARKS
 
-> Datum: 2026-07-09 · Suite: **suite-v1** · k=5 Läufe/Task (Seeds: 1001, 1002, 1003, 1004, 1005) · Temperatur: 0.7 · Intervalle: 95 % Wilson. Baseline `naive` ist **illustrativ** (zeigt den Beitrag von Retry/Recovery), Uplift wird gegen `ollama-native` gemessen.
+> Datum: 2026-07-10 · Suite: **suite-v2** · k=5 Läufe/Task (Seeds: 1001, 1002, 1003, 1004, 1005) · Temperatur: 0.7 · Intervalle: 95 % Wilson. Baseline `naive` ist **illustrativ** (zeigt den Beitrag von Retry/Recovery), Uplift wird gegen `ollama-native` gemessen.
 
 ## Modell: `qwen3:8b`
 
 | Harness | Erfolgsrate | 95 %-CI | pass^5 | Ø Tokens | Ø Latenz |
 |---|---|---|---|---|---|
-| ollama-native | 90.0% (45/50) | [78.6%, 95.7%] | 90.0% | 1179 | 6142 ms |
-| naive | 74.0% (37/50) | [60.4%, 84.1%] | 60.0% | 764 | 4661 ms |
-| minimal | 96.0% (48/50) | [86.5%, 98.9%] | 80.0% | 1658 | 14315 ms |
-| smolagents-tool | 94.0% (47/50) | [83.8%, 97.9%] | 80.0% | 4306 | 14607 ms |
+| ollama-native | 85.2% (213/250) | [80.3%, 89.1%] | 76.0% | 1413 | 12042 ms |
+| naive | 59.2% (148/250) | [53.0%, 65.1%] | 50.0% | 999 | 10392 ms |
+| minimal | 90.0% (225/250) | [85.7%, 93.1%] | 74.0% | 2049 | 16522 ms |
 
-Harness-Uplift (minimal vs. ollama-native): +6.0 pp — **kein signifikanter Unterschied** (Konfidenzintervalle überlappen; mehr Tasks/Läufe nötig).
+Harness-Uplift (minimal vs. ollama-native): +4.8 pp — **kein signifikanter Unterschied** (Konfidenzintervalle überlappen; mehr Tasks/Läufe nötig).
 
 ## Modell: `llama3.1`
 
 | Harness | Erfolgsrate | 95 %-CI | pass^5 | Ø Tokens | Ø Latenz |
 |---|---|---|---|---|---|
-| ollama-native | 74.0% (37/50) | [60.4%, 84.1%] | 60.0% | 431 | 774 ms |
-| naive | 24.0% (12/50) | [14.3%, 37.4%] | 20.0% | 239 | 454 ms |
-| minimal | 82.0% (41/50) | [69.2%, 90.2%] | 80.0% | 834 | 776 ms |
-| smolagents-tool | 12.0% (6/50) | [5.6%, 23.8%] | 0.0% | 10611 | 4935 ms |
+| ollama-native | 56.4% (141/250) | [50.2%, 62.4%] | 52.0% | 468 | 3042 ms |
+| naive | 33.6% (84/250) | [28.0%, 39.7%] | 24.0% | 403 | 993 ms |
+| minimal | 92.4% (231/250) | [88.4%, 95.1%] | 84.0% | 1075 | 1519 ms |
 
-Harness-Uplift (minimal vs. ollama-native): +8.0 pp — **kein signifikanter Unterschied** (Konfidenzintervalle überlappen; mehr Tasks/Läufe nötig).
+**Harness-Uplift (minimal vs. ollama-native): +36.0 pp** — signifikant (Konfidenzintervalle disjunkt).
 
 ## Geltungsbereich dieser Zahlen
 
 - **Was die Suite trägt:** den **Uplift-Claim** (minimal vs. ollama-native/naive) — alle Arme laufen auf identischen Tasks, Tools, Modellen und Seeds; gemessen wird eine Differenz auf gleichem Terrain.
 - **Was sie nicht trägt:** Diese Suite ist vom Autor von minimal-harness entworfen und minimal wurde gegen sie debuggt. Sie ist deshalb **kein Beleg für „bestes Harness"** — dafür braucht es neutrale Dritt-Benchmarks (z. B. BFCL).
-- **Fremd-Harness-Zahlen sind orientierend, nicht beweisend:** Rivalen laufen mit **off-the-shelf**-Defaults auf einer Suite mit Heimspiel-Vorteil für minimal und werden über eine Sidecar-/HTTP-Naht integriert (sanitisierte Tool-Namen, Timeouts, Prozess-Spawn) — jede Naht ist ein möglicher Verlustort, der nichts mit Harness-Qualität zu tun hat.
