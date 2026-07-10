@@ -58,6 +58,21 @@ describe("StructuredOutputValidator", () => {
     expect(r.parsed?.toolName).toBe("fs.list");
   });
 
+  // Regression: company probe 2026-07-10 (results.jsonl, f07/f09/f10) —
+  // qwen3:8b fuses ACTION and TOOL into one line and drops TOOL entirely:
+  // "ACTION: erp.query\nARGS: {...}". The tool name in the ACTION field plus
+  // ARGS make the intent unambiguous; rejecting it killed whole runs.
+  it("accepts a tool call where ACTION holds the tool name and TOOL is missing", () => {
+    const r = v.validate(`ACTION: erp.query\nARGS: {"sql": "SELECT * FROM maschinen WHERE name = 'W-4471';"}`);
+    expect(r.valid).toBe(true);
+    expect(r.parsed?.kind).toBe("tool_call");
+    expect(r.parsed?.toolName).toBe("erp.query");
+  });
+
+  it("rejects ACTION: tool_call with ARGS but no TOOL (tool unknowable)", () => {
+    expect(v.validate(`ACTION: tool_call\nARGS: {"sql": "SELECT 1"}`).valid).toBe(false);
+  });
+
   it("accepts a tool call with a missing ACTION line entirely", () => {
     const r = v.validate(`TOOL: erp.query\nARGS: {"sql": "SELECT 1"}`);
     expect(r.valid).toBe(true);

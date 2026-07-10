@@ -27,7 +27,14 @@ export class StructuredOutputValidator implements OutputValidator {
     // final answers below: an ANSWER field counts even when ACTION is off.
     // Line-anchored and case-sensitive: the uppercase field names are the
     // protocol signal; lowercase prose like "the answer: 42" must not match.
-    const header = text.match(/^[ \t]*TOOL:\s*([\w.]+)[\s\S]*?^[ \t]*ARGS:\s*/m);
+    //
+    // Second drift form (observed qwen3:8b): TOOL is dropped entirely and the
+    // tool name sits in the ACTION field — "ACTION: erp.query\nARGS: {...}".
+    // Accepted when the ACTION value is not a protocol keyword (a bare
+    // "ACTION: tool_call" without TOOL stays invalid: the tool is unknowable).
+    const header =
+      text.match(/^[ \t]*TOOL:\s*([\w.]+)[\s\S]*?^[ \t]*ARGS:\s*/m) ??
+      text.match(/^[ \t]*ACTION:\s*(?!tool_call\b|final_answer\b)([\w.]+)[ \t]*\r?\n[\s\S]*?^[ \t]*ARGS:\s*/m);
     if (header) {
       const toolName = header[1]!;
       const argsText = extractBalancedObject(text, header.index! + header[0].length);
