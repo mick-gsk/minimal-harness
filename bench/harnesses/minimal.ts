@@ -1,12 +1,36 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   DefaultAgentLoop,
   DefaultPromptBuilder,
   DefaultToolBridge,
   InMemoryMemory,
+  SqliteMemory,
   StructuredOutputValidator,
 } from "../../src/index.js";
-import type { LLMAdapter, ToolDefinition } from "../../src/index.js";
+import type { LLMAdapter, Memory, ToolDefinition } from "../../src/index.js";
 import type { BenchRunResult, BenchTask, HarnessAdapter } from "../types.js";
+
+/**
+ * BENCH_MEMORY=sqlite swaps the loop's memory for a real on-disk SqliteMemory
+ * (fresh temp file per run, so repeated seeds never share a session). Used by
+ * the equivalence probe: success rates must match InMemoryMemory.
+ */
+function makeBenchMemory(): { memory: Memory; cleanup: () => void } {
+  if (process.env.BENCH_MEMORY === "sqlite") {
+    const dir = mkdtempSync(join(tmpdir(), "bench-mem-"));
+    const memory = new SqliteMemory(join(dir, "memory.db"));
+    return {
+      memory,
+      cleanup: () => {
+        memory.close();
+        rmSync(dir, { recursive: true, force: true });
+      },
+    };
+  }
+  return { memory: new InMemoryMemory(), cleanup: () => {} };
+}
 
 export const SYSTEM_INSTRUCTION =
   "You are a helpful assistant with access to tools. Use them when needed. " +
@@ -27,9 +51,10 @@ export function makeMinimalHarness(
       const toolBridge = new DefaultToolBridge();
       for (const tool of tools) toolBridge.register(tool);
 
+      const { memory, cleanup } = makeBenchMemory();
       const loop = new DefaultAgentLoop({
         llm,
-        memory: new InMemoryMemory(),
+        memory,
         toolBridge,
         validator: new StructuredOutputValidator(),
         promptBuilder: new DefaultPromptBuilder(),
@@ -62,6 +87,8 @@ export function makeMinimalHarness(
           toolCallCount: 0,
           error: err instanceof Error ? err.message : String(err),
         };
+      } finally {
+        cleanup();
       }
     },
   };

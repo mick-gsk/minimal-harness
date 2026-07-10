@@ -52,4 +52,21 @@ describe("minimalHarness", () => {
     expect(result.terminatedReason).toBe("error");
     expect(result.error).toContain("connection refused");
   });
+
+  it("BENCH_MEMORY=sqlite runs the same task through SqliteMemory", async () => {
+    process.env.BENCH_MEMORY = "sqlite";
+    try {
+      const world = new WorldState();
+      const tools = kvTask.makeTools(world);
+      const llm = scriptedLlm([
+        { content: 'ACTION: tool_call\nTOOL: kv.set\nARGS: {"key":"color","value":"blue"}' },
+        { content: "ACTION: final_answer\nANSWER: Stored blue under color." },
+      ]);
+      const result = await minimalHarness.run(kvTask, llm, tools);
+      expect(result.terminatedReason).toBe("final_answer");
+      expect(world.kv.get("color")).toBe("blue");
+    } finally {
+      delete process.env.BENCH_MEMORY;
+    }
+  });
 });
