@@ -51,6 +51,13 @@ export interface AgentLoopDeps {
    * transcripts stay reproducible. Defaults to false (sequential).
    */
   parallelToolCalls?: boolean;
+  /**
+   * Human-in-the-loop gate: asked before every tool execution (in parallel
+   * mode sequentially, before the batch starts). Returning false skips the
+   * call and feeds "denied by approval policy" back to the model — no
+   * phantom success. Unset = every call is approved (previous behavior).
+   */
+  onToolApproval?: (call: { name: string; arguments: unknown }) => Promise<boolean>;
 }
 
 export class DefaultAgentLoop implements AgentLoop {
@@ -80,6 +87,20 @@ export class DefaultAgentLoop implements AgentLoop {
       logger.warn(`Tool call '${toolName}' rejected: ${error}`);
       return { toolName, arguments: args, error, executedAt: Date.now() };
     }
+  }
+
+  /** Asks the approval hook (when present); a denial becomes an error record. */
+  private async approveToolCall(toolName: string, args: unknown): Promise<ToolExecutionRecord | null> {
+    if (!this.deps.onToolApproval) return null;
+    const approved = await this.deps.onToolApproval({ name: toolName, arguments: args });
+    if (approved) return null;
+    logger.warn(`Tool call '${toolName}' denied by approval policy`);
+    return {
+      toolName,
+      arguments: args,
+      error: "not executed: denied by approval policy. Explain to the user that the action was not approved.",
+      executedAt: Date.now(),
+    };
   }
 
   /**
@@ -245,19 +266,27 @@ export class DefaultAgentLoop implements AgentLoop {
           }
         }
 
+        // Approval gate: asked sequentially before anything starts, so a human
+        // sees each proposed call before the batch fires.
+        const denials = new Map<number, ToolExecutionRecord>();
+        for (const [i, call] of accepted.entries()) {
+          const denial = await this.approveToolCall(call.name, call.arguments);
+          if (denial) denials.set(i, denial);
+        }
+
         // executeToolSafely never rejects (failures become error records), so
         // Promise.all cannot abort the batch. Results arrive in call order.
         let records: ToolExecutionRecord[];
         if (this.deps.parallelToolCalls) {
           logger.debug(`[turn ${turn}] Executing ${accepted.length} tool call(s) in parallel`);
           records = await Promise.all(
-            accepted.map((call) => this.executeToolSafely(call.name, call.arguments)),
+            accepted.map((call, i) => denials.get(i) ?? this.executeToolSafely(call.name, call.arguments)),
           );
         } else {
           records = [];
-          for (const call of accepted) {
+          for (const [i, call] of accepted.entries()) {
             logger.debug(`[turn ${turn}] Executing tool (native): ${call.name}`);
-            records.push(await this.executeToolSafely(call.name, call.arguments));
+            records.push(denials.get(i) ?? (await this.executeToolSafely(call.name, call.arguments)));
           }
         }
 
@@ -388,7 +417,9 @@ export class DefaultAgentLoop implements AgentLoop {
         }
 
         logger.debug(`[turn ${turn}] Executing tool: ${toolName}`);
-        const record = await this.executeToolSafely(toolName, parsed.toolArguments);
+        const record =
+          (await this.approveToolCall(toolName, parsed.toolArguments)) ??
+          (await this.executeToolSafely(toolName, parsed.toolArguments));
         toolTrace.push(record);
         agentTurn.toolCalls.push(record);
         rawTurns.push(agentTurn);

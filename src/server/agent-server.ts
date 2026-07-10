@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { randomUUID } from "node:crypto";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { DefaultAgentLoop } from "../core/agent-loop.js";
 import { DefaultPromptBuilder } from "../core/prompt-builder.js";
@@ -22,6 +23,14 @@ export interface AgentServerOptions {
   parallelToolCalls?: boolean;
   /** Server-side ceiling for per-request maxTurns. Defaults to 10 (loop default). */
   maxTurns?: number;
+  /**
+   * Tool names that need human approval before execution. Streaming clients
+   * receive an approval_request SSE event and answer via
+   * POST /v1/agent/approvals/{id}; non-streaming requests deny fail-closed.
+   */
+  requireApproval?: string[];
+  /** How long an approval may stay unanswered before it is denied. Default 120s. */
+  approvalTimeoutMs?: number;
 }
 
 interface RunRequest {
@@ -85,21 +94,43 @@ export function createAgentServer(options: AgentServerOptions): Server {
   const toolBridge = new DefaultToolBridge();
   for (const tool of options.tools) toolBridge.register(tool);
 
-  // One stateless loop for all requests; per-session state lives in memory.
-  const loop = new DefaultAgentLoop({
-    llm: options.llm,
-    memory: options.memory,
-    toolBridge,
-    validator: new StructuredOutputValidator(),
-    promptBuilder: new DefaultPromptBuilder(),
-    ...(options.systemInstruction !== undefined ? { systemInstruction: options.systemInstruction } : {}),
-    ...(options.nativeToolCalling !== undefined ? { nativeToolCalling: options.nativeToolCalling } : {}),
-    ...(options.parallelToolCalls !== undefined ? { parallelToolCalls: options.parallelToolCalls } : {}),
-  });
+  const requireApproval = new Set(options.requireApproval ?? []);
+  const approvalTimeoutMs = options.approvalTimeoutMs ?? 120_000;
+  const pendingApprovals = new Map<string, { userId: string; resolve: (ok: boolean) => void }>();
+
+  // The loop is stateless (per-session state lives in memory), but the
+  // approval hook is per-request in streaming mode — so we build loops on
+  // demand and share everything else.
+  function buildLoop(
+    onToolApproval?: (call: { name: string; arguments: unknown }) => Promise<boolean>,
+  ): DefaultAgentLoop {
+    return new DefaultAgentLoop({
+      llm: options.llm,
+      memory: options.memory,
+      toolBridge,
+      validator: new StructuredOutputValidator(),
+      promptBuilder: new DefaultPromptBuilder(),
+      ...(options.systemInstruction !== undefined ? { systemInstruction: options.systemInstruction } : {}),
+      ...(options.nativeToolCalling !== undefined ? { nativeToolCalling: options.nativeToolCalling } : {}),
+      ...(options.parallelToolCalls !== undefined ? { parallelToolCalls: options.parallelToolCalls } : {}),
+      ...(onToolApproval ? { onToolApproval } : {}),
+    });
+  }
+
+  // Non-streaming requests have no channel to ask a human — gated tools are
+  // denied fail-closed rather than executed silently.
+  const loop = buildLoop(
+    requireApproval.size > 0 ? async (call) => !requireApproval.has(call.name) : undefined,
+  );
 
   return createServer((req, res) => {
-    // Normalized route label (session ids collapsed) keeps metrics cardinality bounded.
-    const route = (req.url ?? "").startsWith("/v1/sessions/") ? "/v1/sessions/{id}" : (req.url ?? "");
+    // Normalized route label (ids collapsed) keeps metrics cardinality bounded.
+    const url = req.url ?? "";
+    const route = url.startsWith("/v1/sessions/")
+      ? "/v1/sessions/{id}"
+      : url.startsWith("/v1/agent/approvals/")
+        ? "/v1/agent/approvals/{id}"
+        : url;
     res.on("finish", () => metrics.countRequest(route, res.statusCode));
     handle(req, res).catch((err) => {
       logger.warn(`Unhandled server error: ${err instanceof Error ? err.message : String(err)}`);
@@ -123,6 +154,25 @@ export function createAgentServer(options: AgentServerOptions): Server {
 
     if (req.url === "/v1/sessions" || req.url?.startsWith("/v1/sessions/")) {
       return handleSessions(req, res);
+    }
+
+    if (req.url?.startsWith("/v1/agent/approvals/")) {
+      if (req.method !== "POST") return sendJson(res, 405, { error: "method not allowed" });
+      const userId = auth.resolveUser(req.headers.authorization);
+      if (!userId) return sendJson(res, 401, { error: "invalid or missing API key" });
+      const approvalId = decodeURIComponent(req.url.slice("/v1/agent/approvals/".length));
+      const entry = pendingApprovals.get(approvalId);
+      // Unknown id and foreign user look identical — no probing.
+      if (!entry || entry.userId !== userId) return sendJson(res, 404, { error: "approval not found" });
+      let body: { approve?: boolean };
+      try {
+        body = (await readJsonBody(req)) as { approve?: boolean };
+      } catch (err) {
+        return sendJson(res, 400, { error: err instanceof Error ? err.message : "invalid body" });
+      }
+      if (typeof body.approve !== "boolean") return sendJson(res, 400, { error: "approve (boolean) is required" });
+      entry.resolve(body.approve);
+      return sendJson(res, 200, { status: "recorded" });
     }
 
     if (req.url === "/v1/agent/run") {
@@ -247,8 +297,34 @@ export function createAgentServer(options: AgentServerOptions): Server {
       res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     };
 
+    // Streaming has a live channel to the human: gated tools emit an
+    // approval_request event and wait for POST /v1/agent/approvals/{id}.
+    // No answer within approvalTimeoutMs denies fail-closed.
+    const requestLoop =
+      requireApproval.size > 0
+        ? buildLoop(async (call) => {
+            if (!requireApproval.has(call.name)) return true;
+            const approvalId = randomUUID();
+            return new Promise<boolean>((resolve) => {
+              const timer = setTimeout(() => {
+                pendingApprovals.delete(approvalId);
+                resolve(false);
+              }, approvalTimeoutMs);
+              pendingApprovals.set(approvalId, {
+                userId,
+                resolve: (ok) => {
+                  clearTimeout(timer);
+                  pendingApprovals.delete(approvalId);
+                  resolve(ok);
+                },
+              });
+              send("approval_request", { approvalId, tool: call.name, arguments: call.arguments });
+            });
+          })
+        : loop;
+
     try {
-      const result = await loop.run({
+      const result = await requestLoop.run({
         sessionId,
         userMessage,
         maxTurns,
