@@ -21,7 +21,12 @@ export class DefaultPromptBuilder implements PromptBuilder {
           `To call a tool respond EXACTLY:\n` +
           `ACTION: tool_call\nTOOL: <tool_name>\nARGS: <json>\n\n` +
           `To give a final answer respond EXACTLY:\n` +
-          `ACTION: final_answer\nANSWER: <your answer>`
+          `ACTION: final_answer\nANSWER: <your answer>\n\n` +
+          // Weak models over-call tools when the block only explains HOW to
+          // call them (BFCL irrelevance: 37/39 fails were needless calls) —
+          // the no-tool path has to be named as explicitly as the tool path.
+          `Not every request needs a tool. If you can answer directly, ` +
+          `respond with ACTION: final_answer immediately.`
         : "";
 
     const systemContent = ctx.systemInstruction + toolBlock;
