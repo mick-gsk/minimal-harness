@@ -5,7 +5,12 @@ export interface Embedder {
 
 export interface OllamaEmbedderConfig {
   baseUrl: string;
-  /** nomic-embed-text is Ollama's standard local embedding model. */
+  /**
+   * Default bge-m3: multilingual — measured hit@1 5/5 on German queries where
+   * nomic-embed-text scored 2/5 (bench/rag-probe.ts). For English-only
+   * corpora nomic-embed-text is a lighter alternative (set the store's
+   * task prefixes for it).
+   */
   model?: string;
 }
 
@@ -17,7 +22,7 @@ export class OllamaEmbedder implements Embedder {
     const res = await fetch(`${this.config.baseUrl}/api/embed`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: this.config.model ?? "nomic-embed-text", input: texts }),
+      body: JSON.stringify({ model: this.config.model ?? "bge-m3", input: texts }),
     });
     if (!res.ok) {
       throw new Error(`Ollama embed request failed: ${res.status} ${res.statusText}`);

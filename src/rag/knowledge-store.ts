@@ -7,6 +7,16 @@ export interface KnowledgeHit {
   score: number;
 }
 
+export interface KnowledgeStoreOptions {
+  /**
+   * Task prefixes prepended before embedding (never stored). Default "" —
+   * right for bge-m3, the default embedding model. For nomic-embed-text set
+   * "search_document: " / "search_query: " (its training format).
+   */
+  documentPrefix?: string;
+  queryPrefix?: string;
+}
+
 /**
  * Local knowledge base: chunks + embeddings in SQLite, ranked by brute-force
  * cosine similarity. Deliberately index-free — SME-scale knowledge bases
@@ -16,11 +26,16 @@ export interface KnowledgeHit {
 export class SqliteKnowledgeStore {
   private readonly db: DatabaseSync;
   private closed = false;
+  private readonly documentPrefix: string;
+  private readonly queryPrefix: string;
 
   constructor(
     path: string,
     private readonly embedder: Embedder,
+    options: KnowledgeStoreOptions = {},
   ) {
+    this.documentPrefix = options.documentPrefix ?? "";
+    this.queryPrefix = options.queryPrefix ?? "";
     this.db = new DatabaseSync(path);
     this.db.exec("PRAGMA journal_mode = WAL");
     this.db.exec(
@@ -36,7 +51,7 @@ export class SqliteKnowledgeStore {
   /** Embeds and stores text chunks under a source label (file name, URL, ...). */
   async add(source: string, texts: string[]): Promise<void> {
     if (texts.length === 0) return;
-    const vectors = await this.embedder.embed(texts);
+    const vectors = await this.embedder.embed(texts.map((t) => this.documentPrefix + t));
     const insert = this.db.prepare("INSERT INTO chunks (source, content, embedding) VALUES (?, ?, ?)");
     this.db.exec("BEGIN");
     try {
@@ -59,7 +74,7 @@ export class SqliteKnowledgeStore {
     }>;
     if (rows.length === 0) return [];
 
-    const [queryVector] = await this.embedder.embed([query]);
+    const [queryVector] = await this.embedder.embed([this.queryPrefix + query]);
     const hits = rows.map((row) => {
       const vector = new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.byteLength / 4);
       return { source: row.source, content: row.content, score: cosine(queryVector!, vector) };
