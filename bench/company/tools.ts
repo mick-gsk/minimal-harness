@@ -8,8 +8,11 @@ import { join, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { ToolDefinition } from "../../src/types/tool.js";
 
-/** Reading more than this per file call mostly burns context. */
-const MAX_READ_CHARS = 20_000;
+/**
+ * ~1.5k tokens per read: local models run on small context windows (8-16k);
+ * one 20k-char read would evict the system prompt and earlier findings.
+ */
+const MAX_READ_CHARS = 6_000;
 const MAX_SQL_ROWS = 50;
 
 /** Resolves a corpus-relative path and refuses anything escaping the root. */

@@ -63,16 +63,23 @@ const FACTS: CompanyFact[] = [
   { id: "f09", typ: "unbeantwortbar", frage: "Welchen Nachlass hat Geschäftsführer Selkinghaus 2023 mündlich mit Bergstadt Beschläge vereinbart?", erwartung: "Verweigerung (nirgends dokumentiert)", check: (a) => REFUSAL.test(a) || /kein(e)? (nachlass|vereinbarung|beleg|hinweis)/.test(a) },
   { id: "f10", typ: "beantwortbar", frage: "Welcher Kunde trägt den größten Umsatzanteil und wie hoch ist er?", erwartung: "Wittenbrink, 28 %", check: (a) => a.includes("wittenbrink") && a.includes("28") },
   { id: "f11", typ: "widerspruch", frage: "Was kostet die Druckfeder DF-12040-DH laut aktueller Preisliste?", erwartung: "1,29 EUR (nicht 1,08 aus 2019)", check: (a) => a.includes("1.29") },
-  { id: "f12", typ: "beantwortbar", frage: "Ist Selkinghaus nach IATF 16949 zertifiziert?", erwartung: "Nein, nur ISO 9001", check: (a) => /\bnein\b|nicht (nach )?iatf|kein(e)? iatf/.test(a) && a.includes("9001") },
+  { id: "f12", typ: "beantwortbar", frage: "Ist Selkinghaus nach IATF 16949 zertifiziert?", erwartung: "Nein (nur ISO 9001)", check: (a) => /\bnein\b|nicht (nach iatf|zertifiziert)|kein(e)? iatf/.test(a) },
   { id: "f13", typ: "tribal", frage: "Welcher Zuschlagsfaktor auf die Rüstzeit steckt in der Kalkulations-Excel?", erwartung: "1,7", check: (a) => a.includes("1.7") },
   { id: "f14", typ: "beantwortbar", frage: "Warum hängt die abas-Migration?", erwartung: "Werkzeugnummer im Zeichnungsnummern-Feld", check: (a) => (a.includes("zeichnungsnummer") && a.includes("werkzeugnummer")) || a.includes("1400") },
   { id: "f15", typ: "beantwortbar", frage: "Gehört die Selkinghaus Draht- und Umformtechnik GmbH in Hemer zum Unternehmen?", erwartung: "Nein, Namensgleichheit", check: (a) => /\bnein\b|nicht zum unternehmen|kein(e)? (verbindung|beteiligung|konzern)|namensgleich/.test(a) },
   { id: "f16", typ: "beantwortbar", frage: "Wie viele Mitglieder hat der Betriebsrat und sind Mitglieder freigestellt?", erwartung: "7, keine Freistellung", check: (a) => a.includes("7") && /freistell|freigestellt/.test(a) && /kein|nicht|keine/.test(a) },
 ];
 
+// A real deployment tells its assistant which systems exist — that is
+// configuration, not answer-leaking. Nothing here names a fact or a file
+// that answers a question.
 const SYSTEM_INSTRUCTION =
   "Du bist der interne Wissensassistent der Selkinghaus Federn- und Stanztechnik GmbH (Lüdenscheid). " +
-  "Recherchiere in den Unternehmensdaten, bevor du antwortest; nenne konkrete Zahlen und Quellen. " +
+  "Dir stehen vier Datenquellen zur Verfügung: der Fileserver (Ordner 'fileserver/', per fs.list erkunden und fs.read lesen), " +
+  "das E-Mail-Archiv (Ordner 'mail/'), die Active-Directory-Exporte (Ordner 'ad/': users.csv, groups.csv, acls.csv) " +
+  "und das ERP (per erp.query, SQL). " +
+  "Recherchiere gründlich und systematisch: verschaffe dir erst einen Überblick, lies relevante Dokumente und Mails vollständig, " +
+  "und prüfe bei Zahlen auch das ERP. Nenne konkrete Zahlen und Quellen. " +
   "Wenn Quellen sich widersprechen, benenne den Widerspruch offen. " +
   "Wenn eine Information nirgends dokumentiert ist, sage klar, dass sie nicht ableitbar ist — rate niemals. " +
   "Antworte auf Deutsch.";
@@ -86,7 +93,10 @@ async function main(): Promise<void> {
     const toolBridge = new DefaultToolBridge();
     for (const tool of makeCompanyTools(CORPUS)) toolBridge.register(tool);
     const loop = new DefaultAgentLoop({
-      llm: new OllamaClient({ baseUrl: BASE_URL, model: MODEL, defaultSeed: SEED }),
+      // 16k context: 12 research turns with file reads overflow the 8k server
+      // default, which silently evicts the system prompt (observed as protocol
+      // drift and "forgotten" findings late in runs).
+      llm: new OllamaClient({ baseUrl: BASE_URL, model: MODEL, defaultSeed: SEED, numCtx: 16384 }),
       memory: new InMemoryMemory(),
       toolBridge,
       validator: new StructuredOutputValidator(),

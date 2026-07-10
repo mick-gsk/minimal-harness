@@ -17,7 +17,7 @@ interface OllamaChatRequest {
   model: string;
   messages: ChatMessage[];
   stream: boolean;
-  options: { temperature: number; num_predict?: number; stop?: string[]; seed?: number };
+  options: { temperature: number; num_predict?: number; stop?: string[]; seed?: number; num_ctx?: number };
   tools?: OllamaFunctionSpec[];
   think?: boolean;
 }
@@ -48,6 +48,7 @@ export class OllamaClient implements LLMAdapter {
         ...(numPredict !== undefined ? { num_predict: numPredict } : {}),
         ...(options?.stop !== undefined ? { stop: options.stop } : {}),
         ...(seed !== undefined ? { seed } : {}),
+        ...(this.config.numCtx !== undefined ? { num_ctx: this.config.numCtx } : {}),
       },
       ...(think !== undefined ? { think } : {}),
       ...(options?.tools && options.tools.length > 0

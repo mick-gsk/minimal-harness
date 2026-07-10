@@ -12,6 +12,12 @@ export interface OllamaClientConfig {
    * false trades reasoning depth for a large latency win; omitted = model default.
    */
   think?: boolean;
+  /**
+   * Context window (num_ctx) requested per call. Research agents that read
+   * files overflow the server default silently — Ollama drops the oldest
+   * tokens, taking the system prompt with them. Omitted = server default.
+   */
+  numCtx?: number;
 }
 
 export interface AgentConfig {
