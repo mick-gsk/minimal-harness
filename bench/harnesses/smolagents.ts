@@ -41,7 +41,7 @@ function errorResult(msg: string): SidecarResult {
   };
 }
 
-function runSidecar(jobJson: string, maxTurns: number): Promise<SidecarResult> {
+export function runSidecar(jobJson: string, maxTurns: number): Promise<SidecarResult> {
   return new Promise((resolve) => {
     const child = spawn(SMOLAGENTS_PYTHON, [SIDECAR], { stdio: ["pipe", "pipe", "pipe"] });
     let out = "";

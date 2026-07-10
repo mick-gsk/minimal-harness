@@ -13,6 +13,7 @@
  */
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { appendFileSync } from "node:fs";
 import type { ChatMessage } from "../../src/index.js";
 import { DefaultAgentLoop } from "../../src/core/agent-loop.js";
 import { DefaultPromptBuilder } from "../../src/core/prompt-builder.js";
@@ -20,6 +21,8 @@ import { StructuredOutputValidator } from "../../src/guardrails/validator.js";
 import { InMemoryMemory } from "../../src/memory/in-memory.js";
 import { DefaultToolBridge } from "../../src/tools/tool-bridge.js";
 import { OllamaClient } from "../../src/llm/ollama-client.js";
+import { runSidecar, smolagentsAvailable } from "../harnesses/smolagents.js";
+import { startWorldBridge } from "../bridge/world-http-bridge.js";
 import { makeCompanyTools } from "./tools.js";
 
 const BASE_URL = process.env.OLLAMA_BASE_URL ?? "http://localhost:11434";
@@ -100,7 +103,7 @@ const SYSTEM_INSTRUCTION =
  * Ollama's native tool calling. Same model config, same deployment prompt,
  * same tools, same turn budget — no protocol, no retries, no recovery.
  */
-async function runFactNative(fact: CompanyFact, seed: number): Promise<{ ok: boolean; note: string }> {
+async function runFactNative(fact: CompanyFact, seed: number): Promise<FactRunResult> {
   const tools = makeCompanyTools(CORPUS);
   const byName = new Map(tools.map((t) => [t.name, t]));
   const llm = new OllamaClient({
@@ -141,7 +144,7 @@ async function runFactNative(fact: CompanyFact, seed: number): Promise<{ ok: boo
         }
         continue;
       }
-      return { ok: fact.check(normalize(res.content)), note: res.content.replace(/\s+/g, " ").slice(0, 110) };
+      return { ok: fact.check(normalize(res.content)), note: res.content.replace(/\s+/g, " ").slice(0, 110), answer: res.content };
     }
     return { ok: false, note: "terminated: max_turns" };
   } catch (err) {
@@ -149,8 +152,50 @@ async function runFactNative(fact: CompanyFact, seed: number): Promise<{ ok: boo
   }
 }
 
-async function runFact(fact: CompanyFact, seed: number): Promise<{ ok: boolean; note: string }> {
+/**
+ * Competitor: Hugging Face smolagents, off-the-shelf. It keeps its own system
+ * scaffold (that IS the rival harness), so the deployment context travels in
+ * the task prompt — exactly how a smolagents user deploys it. Same tools via
+ * the HTTP bridge, same turn budget, same model over Ollama's /v1.
+ */
+async function runFactSmolagents(fact: CompanyFact, seed: number, agentType: "tool" | "code"): Promise<FactRunResult> {
+  const tools = makeCompanyTools(CORPUS);
+  const bridge = await startWorldBridge(tools);
+  try {
+    const job = {
+      prompt: `${SYSTEM_INSTRUCTION}\n\nFrage: ${fact.frage}`,
+      maxSteps: MAX_TURNS,
+      bridgeUrl: bridge.url,
+      agentType,
+      model: {
+        id: MODEL,
+        apiBase: `${BASE_URL.replace(/\/$/, "")}/v1`,
+        apiKey: "ollama",
+        temperature: TEMPERATURE,
+        seed,
+      },
+      tools: tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })),
+    };
+    const res = await runSidecar(JSON.stringify(job), MAX_TURNS);
+    if (res.error) return { ok: false, note: `error: ${res.error.slice(0, 100)}` };
+    if (res.finalAnswer === null) return { ok: false, note: `terminated: ${res.terminatedReason}` };
+    return { ok: fact.check(normalize(res.finalAnswer)), note: res.finalAnswer.replace(/\s+/g, " ").slice(0, 110), answer: res.finalAnswer };
+  } finally {
+    await bridge.close();
+  }
+}
+
+interface FactRunResult {
+  ok: boolean;
+  note: string;
+  /** Full final answer when one was produced — persisted to results.jsonl. */
+  answer?: string;
+}
+
+async function runFact(fact: CompanyFact, seed: number): Promise<FactRunResult> {
   if (HARNESS === "native") return runFactNative(fact, seed);
+  if (HARNESS === "smolagents-tool") return runFactSmolagents(fact, seed, "tool");
+  if (HARNESS === "smolagents-code") return runFactSmolagents(fact, seed, "code");
   const toolBridge = new DefaultToolBridge();
   for (const tool of makeCompanyTools(CORPUS)) toolBridge.register(tool);
   const loop = new DefaultAgentLoop({
@@ -180,6 +225,7 @@ async function runFact(fact: CompanyFact, seed: number): Promise<{ ok: boolean; 
     return {
       ok: fact.check(normalize(result.finalAnswer)),
       note: result.finalAnswer.replace(/\s+/g, " ").slice(0, 110),
+      answer: result.finalAnswer,
     };
   } catch (err) {
     return { ok: false, note: `error: ${err instanceof Error ? err.message : String(err)}` };
@@ -187,6 +233,9 @@ async function runFact(fact: CompanyFact, seed: number): Promise<{ ok: boolean; 
 }
 
 async function main(): Promise<void> {
+  if (HARNESS.startsWith("smolagents") && !smolagentsAvailable()) {
+    throw new Error("smolagents sidecar missing — see bench/smolagents/README");
+  }
   console.log(
     `\n=== company probe → ${BASE_URL} model=${MODEL} harness=${HARNESS} seeds=${SEEDS.join(",")} temp=${TEMPERATURE} think=${THINK} facts=${FACTS.length} ===\n`,
   );
@@ -198,11 +247,19 @@ async function main(): Promise<void> {
   const only = process.env.COMPANY_FACTS?.split(",");
   const facts = only ? FACTS.filter((f) => only.includes(f.id)) : FACTS;
 
+  // Full answers as JSONL so failures can be analyzed (and checks recalibrated)
+  // offline without re-burning GPU hours. 110-char console notes are not evidence.
+  const resultLog = process.env.COMPANY_LOG ?? join(dirname(fileURLToPath(import.meta.url)), "results.jsonl");
+
   for (const fact of facts) {
     const marks: string[] = [];
     let lastFailNote = "";
     for (const seed of SEEDS) {
-      const { ok, note } = await runFact(fact, seed);
+      const { ok, note, answer } = await runFact(fact, seed);
+      appendFileSync(
+        resultLog,
+        JSON.stringify({ ts: new Date().toISOString(), model: MODEL, harness: HARNESS, think: THINK, seed, factId: fact.id, typ: fact.typ, ok, note: answer === undefined ? note : undefined, answer }) + "\n",
+      );
       marks.push(ok ? "✓" : "✗");
       if (ok) {
         passed++;
