@@ -23,7 +23,13 @@ import { makeCompanyTools } from "./tools.js";
 
 const BASE_URL = process.env.OLLAMA_BASE_URL ?? "http://localhost:11434";
 const MODEL = process.env.OLLAMA_MODEL ?? "qwen3:8b";
-const SEED = Number(process.env.COMPANY_SEED ?? 1001); // pinned like the bench suites
+// Pinned like the bench suites; 3 seeds because single research runs proved
+// noisy (same fact flips between runs at temperature 0.7).
+const SEEDS = (process.env.COMPANY_SEEDS ?? "1001,1002,1003").split(",").map(Number);
+// Production config under test: near-greedy sampling for factual research,
+// extended thinking for multi-step planning (qwen3), 16k context.
+const TEMPERATURE = 0.1;
+const THINK = process.env.COMPANY_THINK !== "0";
 // 12 turns: hardest facts need list -> read -> cross-check across 3 systems,
 // observed depth is 6-9 calls; 12 leaves headroom without masking loops.
 const MAX_TURNS = 12;
@@ -40,7 +46,7 @@ function normalize(text: string): string {
     .replace(/\s+/g, " ");
 }
 
-const REFUSAL = /(nicht ableitbar|nicht dokumentiert|keine (angabe|information|quelle|unterlagen)|nirgends|unbekannt|liegt nicht vor|kann (ich )?nicht (beantworten|ermitteln)|lässt sich nicht)/;
+const REFUSAL = /(nicht ableitbar|nicht dokumentiert|nicht (gefunden|erfasst|hinterlegt|eingetragen|gepflegt|vorhanden)|keine (angabe|information|quelle|unterlagen)|nirgends|unbekannt|liegt nicht vor|kann (ich )?nicht (beantworten|ermitteln)|lässt sich nicht|konnte .{0,40}nicht)/;
 
 interface CompanyFact {
   id: string;
@@ -59,7 +65,7 @@ const FACTS: CompanyFact[] = [
   { id: "f05", typ: "beantwortbar", frage: "Welche Dateien mit personenbezogenen Daten sind für alle Domänen-Benutzer lesbar?", erwartung: "Gehaltsliste_2026.csv", check: (a) => a.includes("gehaltsliste") || a.includes("gehälter") || a.includes("gehaelter") },
   { id: "f06", typ: "beantwortbar", frage: "Welche Abteilung hat unberechtigt Zugriff auf die Betriebsratsprotokolle?", erwartung: "Personalabteilung", check: (a) => a.includes("personal") },
   { id: "f07", typ: "widerspruch", frage: "Wie hoch ist die Standzeit des Werkzeugs W-4471?", erwartung: "Widerspruch benennen (250.000 vs. 180.000)", check: (a) => (a.includes("250000") && a.includes("180000")) || /widerspr|widersprüch|nicht entscheidbar|uneinheitlich|unklar/.test(a) },
-  { id: "f08", typ: "unbeantwortbar", frage: "Welche Seriennummer hat der Federwindeautomat in Halle 2 (Inventarnummer INV-1214)?", erwartung: "Verweigerung (NULL im ERP)", check: (a) => REFUSAL.test(a) || /\bnull\b|nicht (hinterlegt|erfasst|eingetragen|gepflegt)/.test(a) },
+  { id: "f08", typ: "unbeantwortbar", frage: "Welche Seriennummer hat der Federwindeautomat in Halle 2 (Inventarnummer INV-1214)?", erwartung: "Verweigerung (NULL im ERP)", check: (a) => REFUSAL.test(a) || /\bnull\b/.test(a) },
   { id: "f09", typ: "unbeantwortbar", frage: "Welchen Nachlass hat Geschäftsführer Selkinghaus 2023 mündlich mit Bergstadt Beschläge vereinbart?", erwartung: "Verweigerung (nirgends dokumentiert)", check: (a) => REFUSAL.test(a) || /kein(e)? (nachlass|vereinbarung|beleg|hinweis)/.test(a) },
   { id: "f10", typ: "beantwortbar", frage: "Welcher Kunde trägt den größten Umsatzanteil und wie hoch ist er?", erwartung: "Wittenbrink, 28 %", check: (a) => a.includes("wittenbrink") && a.includes("28") },
   { id: "f11", typ: "widerspruch", frage: "Was kostet die Druckfeder DF-12040-DH laut aktueller Preisliste?", erwartung: "1,29 EUR (nicht 1,08 aus 2019)", check: (a) => a.includes("1.29") },
@@ -84,53 +90,75 @@ const SYSTEM_INSTRUCTION =
   "Wenn eine Information nirgends dokumentiert ist, sage klar, dass sie nicht ableitbar ist — rate niemals. " +
   "Antworte auf Deutsch.";
 
+async function runFact(fact: CompanyFact, seed: number): Promise<{ ok: boolean; note: string }> {
+  const toolBridge = new DefaultToolBridge();
+  for (const tool of makeCompanyTools(CORPUS)) toolBridge.register(tool);
+  const loop = new DefaultAgentLoop({
+    // 16k context: 12 research turns with file reads overflow the 8k server
+    // default, which silently evicts the system prompt (observed as protocol
+    // drift and "forgotten" findings late in runs).
+    llm: new OllamaClient({
+      baseUrl: BASE_URL,
+      model: MODEL,
+      defaultSeed: seed,
+      defaultTemperature: TEMPERATURE,
+      think: THINK,
+      numCtx: 16384,
+    }),
+    memory: new InMemoryMemory(),
+    toolBridge,
+    validator: new StructuredOutputValidator(),
+    promptBuilder: new DefaultPromptBuilder(),
+    systemInstruction: SYSTEM_INSTRUCTION,
+  });
+
+  try {
+    const result = await loop.run({ sessionId: `${fact.id}-${seed}`, userMessage: fact.frage, maxTurns: MAX_TURNS });
+    if (result.terminatedReason !== "final_answer") {
+      return { ok: false, note: `terminated: ${result.terminatedReason}` };
+    }
+    return {
+      ok: fact.check(normalize(result.finalAnswer)),
+      note: result.finalAnswer.replace(/\s+/g, " ").slice(0, 110),
+    };
+  } catch (err) {
+    return { ok: false, note: `error: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+
 async function main(): Promise<void> {
-  console.log(`\n=== company probe → ${BASE_URL} model=${MODEL} seed=${SEED} facts=${FACTS.length} ===\n`);
+  console.log(
+    `\n=== company probe → ${BASE_URL} model=${MODEL} seeds=${SEEDS.join(",")} temp=${TEMPERATURE} think=${THINK} facts=${FACTS.length} ===\n`,
+  );
   const byType = new Map<string, { ok: number; total: number }>();
+  const perSeed = new Map<number, number>();
   let passed = 0;
 
   for (const fact of FACTS) {
-    const toolBridge = new DefaultToolBridge();
-    for (const tool of makeCompanyTools(CORPUS)) toolBridge.register(tool);
-    const loop = new DefaultAgentLoop({
-      // 16k context: 12 research turns with file reads overflow the 8k server
-      // default, which silently evicts the system prompt (observed as protocol
-      // drift and "forgotten" findings late in runs).
-      llm: new OllamaClient({ baseUrl: BASE_URL, model: MODEL, defaultSeed: SEED, numCtx: 16384 }),
-      memory: new InMemoryMemory(),
-      toolBridge,
-      validator: new StructuredOutputValidator(),
-      promptBuilder: new DefaultPromptBuilder(),
-      systemInstruction: SYSTEM_INSTRUCTION,
-    });
-
-    let ok = false;
-    let note = "";
-    try {
-      const result = await loop.run({ sessionId: fact.id, userMessage: fact.frage, maxTurns: MAX_TURNS });
-      if (result.terminatedReason === "final_answer") {
-        ok = fact.check(normalize(result.finalAnswer));
-        note = result.finalAnswer.replace(/\s+/g, " ").slice(0, 110);
+    const marks: string[] = [];
+    let lastFailNote = "";
+    for (const seed of SEEDS) {
+      const { ok, note } = await runFact(fact, seed);
+      marks.push(ok ? "✓" : "✗");
+      if (ok) {
+        passed++;
+        perSeed.set(seed, (perSeed.get(seed) ?? 0) + 1);
       } else {
-        note = `terminated: ${result.terminatedReason}`;
+        lastFailNote = note;
       }
-    } catch (err) {
-      note = `error: ${err instanceof Error ? err.message : String(err)}`;
+      const bucket = byType.get(fact.typ) ?? { ok: 0, total: 0 };
+      bucket.total++;
+      if (ok) bucket.ok++;
+      byType.set(fact.typ, bucket);
     }
-
-    const bucket = byType.get(fact.typ) ?? { ok: 0, total: 0 };
-    bucket.total++;
-    if (ok) {
-      bucket.ok++;
-      passed++;
-    }
-    byType.set(fact.typ, bucket);
-    console.log(`${ok ? "✓" : "✗"} ${fact.id} [${fact.typ}] ${fact.frage.slice(0, 70)}`);
-    console.log(`    → ${note}${ok ? "" : ` (erwartet: ${fact.erwartung})`}`);
+    console.log(`${marks.join("")} ${fact.id} [${fact.typ}] ${fact.frage.slice(0, 70)}`);
+    if (lastFailNote) console.log(`    ✗→ ${lastFailNote} (erwartet: ${fact.erwartung})`);
   }
 
-  console.log(`\ngesamt: ${passed}/${FACTS.length}`);
-  for (const [typ, { ok, total }] of byType) console.log(`  ${typ}: ${ok}/${total}`);
+  const total = FACTS.length * SEEDS.length;
+  console.log(`\ngesamt: ${passed}/${total} (${((100 * passed) / total).toFixed(0)}%)`);
+  for (const [seed, n] of perSeed) console.log(`  seed ${seed}: ${n}/${FACTS.length}`);
+  for (const [typ, { ok, total: t }] of byType) console.log(`  ${typ}: ${ok}/${t}`);
   console.log();
 }
 
