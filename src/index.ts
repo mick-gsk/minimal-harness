@@ -34,6 +34,11 @@ export { AgentError, ToolNotFoundError, ToolValidationError } from "./utils/erro
 export { safeParseJson } from "./utils/json.js";
 export { logger } from "./utils/logger.js";
 
+// Server
+export { createAgentServer } from "./server/agent-server.js";
+export type { AgentServerOptions } from "./server/agent-server.js";
+export { ApiKeyAuth } from "./server/auth.js";
+
 // Types
 export type { AgentLoop, AgentLoopInput, AgentLoopResult, AgentTurn } from "./types/agent.js";
 export type { Memory, MemoryRecord, MemoryState } from "./types/memory.js";

@@ -201,6 +201,33 @@ perf smoke: 10,000 appends ≈ 0.5 s, reading a 1,000-message session < 1 ms.
 - **Token streaming**: pass `onToken` to `loop.run(...)` — chunks flow from the
   backend (Ollama NDJSON, OpenAI-compat SSE) straight to your callback.
 
+## Multi-User Agent Server
+
+`createAgentServer` turns the harness into a deployable HTTP service — still
+zero dependencies (`node:http` + `node:crypto`):
+
+```ts
+import { createAgentServer, OllamaClient, SqliteMemory } from "minimal-harness";
+
+createAgentServer({
+  llm: new OllamaClient({ baseUrl: "http://localhost:11434", model: "qwen3:8b" }),
+  tools: [/* your tools */],
+  memory: new SqliteMemory("./agent-memory.db"),
+  apiKeys: { "sk-secret-key": "alice" }, // key -> userId
+}).listen(8790);
+```
+
+- **Auth**: Bearer API keys, constant-time comparison over SHA-256 digests
+- **Isolation**: sessions are scoped `userId:sessionId` — the userId comes from
+  the API key only, so users can never touch each other's sessions
+- **Routes**: `GET /healthz`, `POST /v1/agent/run` (`{sessionId, message, maxTurns?, stream?}`);
+  `stream: true` returns SSE token events plus a final `result` event
+- **Validated**: integration tests cover auth failures, cross-user isolation on
+  a real SQLite file, SSE, error paths, and a 20-parallel-request smoke (21 ms)
+- TLS and rate limiting deliberately live in your reverse proxy
+
+See [examples/server.ts](examples/server.ts) for a runnable setup.
+
 ## v1 Limitations
 
 - `summarize()` on `Memory` is optional and not wired into the default loop
