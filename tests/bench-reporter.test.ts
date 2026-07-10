@@ -73,6 +73,19 @@ describe("buildReport", () => {
     expect(md).toContain("illustrativ");
   });
 
+  it("flags seam-attributable fails under the table instead of hiding them", () => {
+    const seamFail: RunRecord = {
+      model: "m1", harness: "smolagents-tool", taskId: "a", category: "single-tool",
+      seed: 1, success: false,
+      result: { ...okResult, finalAnswer: null, terminatedReason: "error", seamErrors: 1 },
+    };
+    const md = buildReport([rec("minimal", "a", 1, true), seamFail], meta);
+    expect(md).toMatch(/1 Fail\(s\) mit Naht-Fehlern/);
+
+    const clean = buildReport([rec("minimal", "a", 1, true)], meta);
+    expect(clean).not.toContain("Naht-Fehlern");
+  });
+
   describe("scope section (structural confounds)", () => {
     // Rationale: the in-house suite was designed by minimal's author around
     // minimal's abstractions and minimal was debugged against it. It can carry

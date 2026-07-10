@@ -41,6 +41,12 @@ export interface BenchRunResult {
    * to the in-process TS harnesses. Undefined for in-process harnesses.
    */
   agentMs?: number;
+  /**
+   * Count of integration-seam faults during this run (sidecar spawn/timeout/
+   * result parse, bridge HTTP transport). Lets the report separate "harness
+   * lost" from "wiring lost". Undefined for in-process harnesses.
+   */
+  seamErrors?: number;
   error?: string;
 }
 

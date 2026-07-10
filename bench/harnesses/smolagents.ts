@@ -22,9 +22,12 @@ interface SidecarResult {
   tokens: number;
   steps: number;
   agentMs: number;
+  /** Bridge-transport faults counted inside the sidecar (seam, not harness). */
+  seamErrors?: number;
   error: string | null;
 }
 
+/** Spawn failure, timeout kill, unparseable result — all seam, not harness. */
 function errorResult(msg: string): SidecarResult {
   return {
     finalAnswer: null,
@@ -33,6 +36,7 @@ function errorResult(msg: string): SidecarResult {
     tokens: 0,
     steps: 0,
     agentMs: 0,
+    seamErrors: 1,
     error: msg,
   };
 }
@@ -118,6 +122,7 @@ function makeSmolagentsHarness(
           toolCallCount: res.toolCalls,
           agentMs: res.agentMs,
         };
+        if (res.seamErrors) out.seamErrors = res.seamErrors;
         if (res.error) out.error = res.error;
         return out;
       } finally {

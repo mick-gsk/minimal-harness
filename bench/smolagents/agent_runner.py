@@ -65,7 +65,13 @@ def build_tools(specs: list, bridge_url: str, counter: dict) -> list:
         def make_forward(rn: str, params: list):
             def _invoke(payload: dict):
                 counter["n"] += 1
-                data = post_tool(bridge_url, rn, payload)
+                try:
+                    data = post_tool(bridge_url, rn, payload)
+                except Exception as exc:  # noqa: BLE001
+                    # Transport-level failure (timeout, connection, HTTP status):
+                    # integration seam, not harness quality — count it separately.
+                    counter["seam"] += 1
+                    raise RuntimeError(f"bridge transport error: {exc}") from exc
                 if data.get("ok"):
                     return json.dumps(data.get("result"))
                 # Tool error → raise so smolagents surfaces it to the model as an
@@ -112,9 +118,10 @@ def main() -> None:
         "tokens": 0,
         "steps": 0,
         "agentMs": 0.0,
+        "seamErrors": 0,
         "error": None,
     }
-    counter = {"n": 0}
+    counter = {"n": 0, "seam": 0}
     try:
         from smolagents import CodeAgent, ToolCallingAgent, OpenAIServerModel
 
@@ -146,10 +153,12 @@ def main() -> None:
                 getattr(mon, "total_output_token_count", 0) or 0
             )
         result["toolCalls"] = counter["n"]
+        result["seamErrors"] = counter["seam"]
         result["error"] = None
     except Exception as exc:  # noqa: BLE001 — sidecar must always report, never crash silently
         result["error"] = f"{type(exc).__name__}: {exc}"
         result["toolCalls"] = counter["n"]
+        result["seamErrors"] = counter["seam"]
 
     real_stdout.write("SMOLARESULT:" + json.dumps(result) + "\n")
     real_stdout.flush()

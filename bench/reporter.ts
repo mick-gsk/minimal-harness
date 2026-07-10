@@ -18,6 +18,8 @@ interface Cell {
   passK: number;
   avgTokens: number;
   avgLatencyMs: number;
+  /** Failed runs that also recorded seam faults — not attributable to the harness. */
+  seamFails: number;
 }
 
 const pct = (x: number): string => `${(x * 100).toFixed(1)}%`;
@@ -43,6 +45,7 @@ function aggregate(records: RunRecord[]): Cell {
     passK: passK([...byTask.values()]),
     avgTokens: avg((r) => r.result.tokens),
     avgLatencyMs: avg((r) => r.result.latencyMs),
+    seamFails: records.filter((r) => !r.success && (r.result.seamErrors ?? 0) > 0).length,
   };
 }
 
@@ -80,6 +83,17 @@ export function buildReport(records: RunRecord[], meta: ReportMeta): string {
       );
     }
     lines.push(``);
+
+    for (const h of harnesses) {
+      const c = cells.get(h)!;
+      if (c.seamFails > 0) {
+        lines.push(
+          `⚠ \`${h}\`: ${c.seamFails} Fail(s) mit Naht-Fehlern (Sidecar/Bridge) — ` +
+            `nicht dem Harness attribuierbar.`,
+        );
+        lines.push(``);
+      }
+    }
 
     const minimal = cells.get("minimal");
     const baseline = cells.get("ollama-native");
