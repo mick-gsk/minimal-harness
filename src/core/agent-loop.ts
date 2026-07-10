@@ -12,6 +12,9 @@ import type { GuardrailPolicy } from "../types/guardrails.js";
 import { AgentError } from "../utils/errors.js";
 import { logger } from "../utils/logger.js";
 import { extractiveSummary } from "../memory/summarizer.js";
+import { validateToolInput } from "../tools/schema.js";
+import { safeParseJson } from "../utils/json.js";
+import type { ToolInputSchema } from "../types/tool.js";
 
 export interface AgentLoopDeps {
   llm: LLMAdapter;
@@ -103,10 +106,66 @@ export class DefaultAgentLoop implements AgentLoop {
     return plain.length > 0 && !plain.startsWith("ACTION:") ? plain : candidate;
   }
 
+  /**
+   * Parses a final-answer candidate against the response schema. Tolerates a
+   * ```json fence around the object; anything else must be plain JSON.
+   */
+  private static parseStructured(
+    candidate: string,
+    schema: ToolInputSchema,
+  ): { ok: true; value: unknown } | { ok: false; error: string } {
+    const unfenced = candidate.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/, "$1");
+    const parsed = safeParseJson(unfenced);
+    if (!parsed.ok) return { ok: false, error: "the answer is not valid JSON" };
+    const violation = validateToolInput(parsed.value, schema);
+    return violation ? { ok: false, error: violation } : { ok: true, value: parsed.value };
+  }
+
+  /**
+   * Corrective retry loop for responseSchema violations. Returns the parsed
+   * object plus the (possibly corrected) answer text, or null when the model
+   * never conforms — the caller then terminates with validation_failed.
+   */
+  private async enforceResponseSchema(
+    messages: ChatMessage[],
+    lastOutput: string,
+    candidate: string,
+    schema: ToolInputSchema,
+  ): Promise<{ answer: string; structured: unknown } | null> {
+    let answer = candidate;
+    let assistantOutput = lastOutput;
+    for (let attempt = 0; ; attempt++) {
+      const result = DefaultAgentLoop.parseStructured(answer, schema);
+      if (result.ok) return { answer, structured: result.value };
+      if (attempt >= defaultRetryStrategy.maxRetries) return null;
+
+      logger.warn(`Response schema violated (${result.error}), retry ${attempt + 1}`);
+      const response = await this.deps.llm.generate([
+        ...messages,
+        { role: "assistant", content: assistantOutput },
+        {
+          role: "user",
+          content:
+            `Your final answer violates the required JSON schema: ${result.error}. ` +
+            `Reply with ONLY the corrected JSON object matching the schema.`,
+        },
+      ]);
+      assistantOutput = response.content;
+      // The correction may arrive as protocol format or as bare JSON.
+      const parsed = parseAssistantOutput(response.content, this.deps.validator);
+      answer = parsed.kind === "final" ? (parsed.finalText ?? response.content) : response.content;
+    }
+  }
+
   async run(input: AgentLoopInput): Promise<AgentLoopResult> {
-    const { sessionId, userMessage, maxTurns = 10, onToken } = input;
+    const { sessionId, userMessage, maxTurns = 10, onToken, responseSchema } = input;
     const { llm, memory, toolBridge, validator, promptBuilder } = this.deps;
-    const systemInstruction = this.deps.systemInstruction ?? "You are a helpful assistant.";
+    const baseInstruction = this.deps.systemInstruction ?? "You are a helpful assistant.";
+    // The schema contract goes into the system prompt so the model knows the
+    // target format from turn one instead of learning it through retries.
+    const systemInstruction = responseSchema
+      ? `${baseInstruction}\n\nYour final answer must be a single valid JSON object matching this JSON schema:\n${JSON.stringify(responseSchema)}`
+      : baseInstruction;
 
     const toolTrace: ToolExecutionRecord[] = [];
     const rawTurns: AgentTurn[] = [];
@@ -246,10 +305,29 @@ export class DefaultAgentLoop implements AgentLoop {
         if (this.deps.verifyFinalAnswer && toolTrace.length > 0) {
           finalAnswer = await this.verifyAnswer(messages, rawOutput, rawOutput);
         }
+        let structured: unknown;
+        if (responseSchema) {
+          const enforced = await this.enforceResponseSchema(messages, rawOutput, finalAnswer, responseSchema);
+          if (!enforced) {
+            sm.transition("ERROR");
+            rawTurns.push({ turnIndex: turn, rawAssistantOutput: rawOutput, toolCalls: [] });
+            return { sessionId, finalAnswer: "", toolTrace, rawTurns, terminatedReason: "validation_failed", finalState: sm.current() };
+          }
+          finalAnswer = enforced.answer;
+          structured = enforced.structured;
+        }
         sm.transition("FINAL_ANSWER"); // generating -> done
         rawTurns.push({ turnIndex: turn, rawAssistantOutput: rawOutput, toolCalls: [] });
         await memory.append(sessionId, { role: "assistant", content: rawOutput, timestamp: Date.now() });
-        return { sessionId, finalAnswer, toolTrace, rawTurns, terminatedReason: "final_answer", finalState: sm.current() };
+        return {
+          sessionId,
+          finalAnswer,
+          ...(structured !== undefined ? { structuredAnswer: structured } : {}),
+          toolTrace,
+          rawTurns,
+          terminatedReason: "final_answer",
+          finalState: sm.current(),
+        };
       }
 
       // Retry loop for validation
@@ -276,10 +354,29 @@ export class DefaultAgentLoop implements AgentLoop {
         if (this.deps.verifyFinalAnswer && toolTrace.length > 0) {
           finalAnswer = await this.verifyAnswer(messages, lastOutput, finalAnswer);
         }
+        let structured: unknown;
+        if (responseSchema) {
+          const enforced = await this.enforceResponseSchema(messages, lastOutput, finalAnswer, responseSchema);
+          if (!enforced) {
+            sm.transition("ERROR");
+            rawTurns.push(agentTurn);
+            return { sessionId, finalAnswer: "", toolTrace, rawTurns, terminatedReason: "validation_failed", finalState: sm.current() };
+          }
+          finalAnswer = enforced.answer;
+          structured = enforced.structured;
+        }
         sm.transition("FINAL_ANSWER"); // generating -> done
         rawTurns.push(agentTurn);
         await memory.append(sessionId, { role: "assistant", content: lastOutput, timestamp: Date.now() });
-        return { sessionId, finalAnswer, toolTrace, rawTurns, terminatedReason: "final_answer", finalState: sm.current() };
+        return {
+          sessionId,
+          finalAnswer,
+          ...(structured !== undefined ? { structuredAnswer: structured } : {}),
+          toolTrace,
+          rawTurns,
+          terminatedReason: "final_answer",
+          finalState: sm.current(),
+        };
       }
 
       if (parsed.kind === "tool_call") {

@@ -1,4 +1,4 @@
-import type { ToolExecutionRecord } from "./tool.js";
+import type { ToolExecutionRecord, ToolInputSchema } from "./tool.js";
 import type { AgentState } from "../core/state-machine.js";
 
 export interface AgentLoopInput {
@@ -11,6 +11,14 @@ export interface AgentLoopInput {
    * (ACTION: ...); retry and verify calls do not stream.
    */
   onToken?: (chunk: string) => void;
+  /**
+   * When set, the final answer must be a single JSON object matching this
+   * schema. The contract is injected into the system prompt, the answer is
+   * parsed and validated, and violations trigger corrective retries. A run
+   * that never conforms terminates with "validation_failed" — callers never
+   * receive silently broken JSON.
+   */
+  responseSchema?: ToolInputSchema;
 }
 
 export interface AgentTurn {
@@ -22,6 +30,8 @@ export interface AgentTurn {
 export interface AgentLoopResult {
   sessionId: string;
   finalAnswer: string;
+  /** Parsed, schema-validated answer object — present when responseSchema was set and satisfied. */
+  structuredAnswer?: unknown;
   toolTrace: ToolExecutionRecord[];
   rawTurns: AgentTurn[];
   terminatedReason: "final_answer" | "max_turns" | "validation_failed" | "error";

@@ -6,7 +6,7 @@ import { StructuredOutputValidator } from "../guardrails/validator.js";
 import { DefaultToolBridge } from "../tools/tool-bridge.js";
 import type { LLMAdapter } from "../types/llm.js";
 import type { Memory } from "../types/memory.js";
-import type { ToolDefinition } from "../types/tool.js";
+import type { ToolDefinition, ToolInputSchema } from "../types/tool.js";
 import { logger } from "../utils/logger.js";
 import { ApiKeyAuth } from "./auth.js";
 
@@ -29,6 +29,8 @@ interface RunRequest {
   message: string;
   maxTurns?: number;
   stream?: boolean;
+  /** Optional JSON schema the final answer must satisfy (structured extraction). */
+  responseSchema?: ToolInputSchema;
 }
 
 /** Requests above this size are rejected — protects against memory abuse. */
@@ -151,10 +153,16 @@ export function createAgentServer(options: AgentServerOptions): Server {
 
       const startedAt = Date.now();
       try {
-        const result = await loop.run({ sessionId, userMessage: body.message, maxTurns });
+        const result = await loop.run({
+          sessionId,
+          userMessage: body.message,
+          maxTurns,
+          ...(body.responseSchema ? { responseSchema: body.responseSchema } : {}),
+        });
         recordRun(userId, sessionId, result.terminatedReason, startedAt, result.rawTurns.length, result.toolTrace.length);
         return sendJson(res, 200, {
           finalAnswer: result.finalAnswer,
+          ...(result.structuredAnswer !== undefined ? { structuredAnswer: result.structuredAnswer } : {}),
           terminatedReason: result.terminatedReason,
           turns: result.rawTurns.length,
           toolCallCount: result.toolTrace.length,
