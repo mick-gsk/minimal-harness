@@ -7,6 +7,8 @@ export { AgentStateMachine } from "./core/state-machine.js";
 // LLM
 export { OllamaClient } from "./llm/ollama-client.js";
 export { adapterFromFn } from "./llm/llm-adapter.js";
+export { OpenAiCompatAdapter } from "./llm/openai-compat.js";
+export type { OpenAiCompatConfig } from "./llm/openai-compat.js";
 export { LMStudioAdapter } from "./llm/lmstudio-adapter.js";
 export { LlamaCppAdapter } from "./llm/llamacpp-adapter.js";
 

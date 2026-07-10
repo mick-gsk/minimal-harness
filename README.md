@@ -115,7 +115,18 @@ const myAdapter = adapterFromFn(async (messages) => {
 });
 ```
 
-Stubs for **LM Studio** (`lmstudio-adapter.ts`) and **llama.cpp** (`llamacpp-adapter.ts`) are included — implement `generate()` to activate them.
+**LM Studio**, **llama.cpp server** and any other OpenAI-compatible backend
+(including Ollama's `/v1` endpoint) work out of the box via `OpenAiCompatAdapter`:
+
+```ts
+import { LMStudioAdapter, LlamaCppAdapter, OpenAiCompatAdapter } from "minimal-harness";
+
+const lmstudio = new LMStudioAdapter();                       // localhost:1234
+const llamacpp = new LlamaCppAdapter();                       // localhost:8080
+const custom = new OpenAiCompatAdapter({ baseUrl: "http://host:8000/v1", model: "qwen3:8b" });
+```
+
+Supports native tool calling and SSE streaming (`onToken`).
 
 ---
 

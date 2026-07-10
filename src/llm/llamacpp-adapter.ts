@@ -1,13 +1,11 @@
+import { OpenAiCompatAdapter } from "./openai-compat.js";
+
 /**
- * llama.cpp server exposes a /completion endpoint.
- * Stub – implement when needed.
+ * llama.cpp's server speaks the OpenAI chat-completions API on port 8080 by
+ * default; it serves a single loaded model, so the model name is nominal.
  */
-import type { LLMAdapter, ChatMessage, LLMGenerateOptions, LLMResponse } from "../types/llm.js";
-
-export class LlamaCppAdapter implements LLMAdapter {
-  constructor(private readonly baseUrl: string) {}
-
-  async generate(_messages: ChatMessage[], _options?: LLMGenerateOptions): Promise<LLMResponse> {
-    throw new Error("LlamaCppAdapter: not yet implemented");
+export class LlamaCppAdapter extends OpenAiCompatAdapter {
+  constructor(baseUrl = "http://localhost:8080/v1", model = "default") {
+    super({ baseUrl, model });
   }
 }
