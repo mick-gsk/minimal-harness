@@ -102,5 +102,42 @@ export function buildReport(records: RunRecord[], meta: ReportMeta): string {
     }
   }
 
+  lines.push(...scopeSection(records));
+
   return lines.join("\n");
+}
+
+/**
+ * States explicitly what these numbers can and cannot claim. The in-house
+ * suite was designed by minimal's author around minimal's abstractions and
+ * minimal was debugged against it — it carries the uplift claim (all arms
+ * share tasks, tools, models and seeds; measured is a difference on identical
+ * terrain), but not a "beats rival X" claim. Honesty here is deliberate:
+ * a benchmark that names its own limits is worth more than any percentage.
+ */
+function scopeSection(records: RunRecord[]): string[] {
+  const hasRival = records.some((r) => !["minimal", "ollama-native", "naive"].includes(r.harness));
+  const lines: string[] = [];
+  lines.push(`## Geltungsbereich dieser Zahlen`);
+  lines.push(``);
+  lines.push(
+    `- **Was die Suite trägt:** den **Uplift-Claim** (minimal vs. ollama-native/naive) — ` +
+      `alle Arme laufen auf identischen Tasks, Tools, Modellen und Seeds; gemessen wird eine ` +
+      `Differenz auf gleichem Terrain.`,
+  );
+  lines.push(
+    `- **Was sie nicht trägt:** Diese Suite ist vom Autor von minimal-harness entworfen und ` +
+      `minimal wurde gegen sie debuggt. Sie ist deshalb **kein Beleg für „bestes Harness"** — ` +
+      `dafür braucht es neutrale Dritt-Benchmarks (z. B. BFCL).`,
+  );
+  if (hasRival) {
+    lines.push(
+      `- **Fremd-Harness-Zahlen sind orientierend, nicht beweisend:** Rivalen laufen mit ` +
+        `**off-the-shelf**-Defaults auf einer Suite mit Heimspiel-Vorteil für minimal und werden ` +
+        `über eine Sidecar-/HTTP-Naht integriert (sanitisierte Tool-Namen, Timeouts, Prozess-Spawn) ` +
+        `— jede Naht ist ein möglicher Verlustort, der nichts mit Harness-Qualität zu tun hat.`,
+    );
+  }
+  lines.push(``);
+  return lines;
 }

@@ -23,3 +23,9 @@ Harness-Uplift (minimal vs. ollama-native): +6.0 pp — **kein signifikanter Unt
 | smolagents-tool | 12.0% (6/50) | [5.6%, 23.8%] | 0.0% | 10611 | 4935 ms |
 
 Harness-Uplift (minimal vs. ollama-native): +8.0 pp — **kein signifikanter Unterschied** (Konfidenzintervalle überlappen; mehr Tasks/Läufe nötig).
+
+## Geltungsbereich dieser Zahlen
+
+- **Was die Suite trägt:** den **Uplift-Claim** (minimal vs. ollama-native/naive) — alle Arme laufen auf identischen Tasks, Tools, Modellen und Seeds; gemessen wird eine Differenz auf gleichem Terrain.
+- **Was sie nicht trägt:** Diese Suite ist vom Autor von minimal-harness entworfen und minimal wurde gegen sie debuggt. Sie ist deshalb **kein Beleg für „bestes Harness"** — dafür braucht es neutrale Dritt-Benchmarks (z. B. BFCL).
+- **Fremd-Harness-Zahlen sind orientierend, nicht beweisend:** Rivalen laufen mit **off-the-shelf**-Defaults auf einer Suite mit Heimspiel-Vorteil für minimal und werden über eine Sidecar-/HTTP-Naht integriert (sanitisierte Tool-Namen, Timeouts, Prozess-Spawn) — jede Naht ist ein möglicher Verlustort, der nichts mit Harness-Qualität zu tun hat.

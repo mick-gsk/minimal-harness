@@ -146,6 +146,14 @@ per task. Success rates come with 95% Wilson confidence intervals; an uplift
 is only claimed when the intervals are disjoint. See
 `docs/superpowers/specs/2026-07-09-messmethodik-lokales-agent-harness-design.md`.
 
+**Scope, stated plainly:** the in-house suite was designed by this project's
+author and minimal was debugged against it. It supports the *uplift* claim
+(all arms share tasks, tools, models and seeds — a difference on identical
+terrain), but it is **not evidence of "best harness"**. Numbers for external
+harnesses (e.g. smolagents, opt-in via `BENCH_SMOLAGENTS`) are orientative
+only: off-the-shelf defaults, home-field task design, sidecar integration
+seam. Neutral third-party benchmarks (BFCL) are tracked separately.
+
 ---
 
 ## v1 Limitations

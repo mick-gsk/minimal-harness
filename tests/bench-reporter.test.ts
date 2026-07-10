@@ -72,4 +72,41 @@ describe("buildReport", () => {
     const md = buildReport(records, meta);
     expect(md).toContain("illustrativ");
   });
+
+  describe("scope section (structural confounds)", () => {
+    // Rationale: the in-house suite was designed by minimal's author around
+    // minimal's abstractions and minimal was debugged against it. It can carry
+    // the uplift claim (all arms share tasks/tools/models/seeds) but NOT a
+    // "beats rival X" claim — the report must say so itself.
+    it("always states what the suite can and cannot claim", () => {
+      const records: RunRecord[] = [
+        rec("minimal", "a", 1, true),
+        rec("ollama-native", "a", 1, true),
+      ];
+      const md = buildReport(records, meta);
+      expect(md).toContain("Geltungsbereich");
+      expect(md).toMatch(/Uplift-Claim/);
+      expect(md).toMatch(/kein Beleg für .bestes Harness./);
+    });
+
+    it("adds the rival caveat only when an external harness competed", () => {
+      const without = buildReport(
+        [rec("minimal", "a", 1, true), rec("ollama-native", "a", 1, true)],
+        meta,
+      );
+      expect(without).not.toContain("off-the-shelf");
+
+      const withRival = buildReport(
+        [
+          rec("minimal", "a", 1, true),
+          rec("ollama-native", "a", 1, true),
+          rec("smolagents-tool", "a", 1, false),
+        ],
+        meta,
+      );
+      expect(withRival).toContain("off-the-shelf");
+      expect(withRival).toMatch(/Heimspiel/);
+      expect(withRival).toMatch(/Sidecar|Naht/);
+    });
+  });
 });
