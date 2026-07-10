@@ -11,7 +11,7 @@ import { OllamaEmbedder } from "../src/rag/embedder.js";
 import { SqliteKnowledgeStore } from "../src/rag/knowledge-store.js";
 
 const BASE_URL = process.env.OLLAMA_BASE_URL ?? "http://localhost:11434";
-const EMBED_MODEL = process.env.EMBED_MODEL ?? "bge-m3";
+const EMBED_MODEL = process.env.EMBED_MODEL ?? "snowflake-arctic-embed2";
 
 /** A small fictional company knowledge base, one chunk per policy. */
 const DOCS: Array<{ source: string; text: string }> = [

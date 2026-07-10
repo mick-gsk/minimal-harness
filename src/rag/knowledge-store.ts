@@ -10,8 +10,8 @@ export interface KnowledgeHit {
 export interface KnowledgeStoreOptions {
   /**
    * Task prefixes prepended before embedding (never stored). Default "" —
-   * right for bge-m3, the default embedding model. For nomic-embed-text set
-   * "search_document: " / "search_query: " (its training format).
+   * measured best for snowflake-arctic-embed2, the default embedding model.
+   * For nomic-embed-text set "search_document: " / "search_query: ".
    */
   documentPrefix?: string;
   queryPrefix?: string;

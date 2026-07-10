@@ -246,9 +246,11 @@ See [examples/server.ts](examples/server.ts) for a runnable setup and
   A run that never conforms fails explicitly instead of returning broken JSON.
   Built for the highest-ROI SME use cases: invoice/order/e-mail extraction.
 - **`SqliteKnowledgeStore` + `knowledge.search`**: a fully local knowledge
-  base — Ollama embeddings (default `bge-m3`, multilingual: hit@1 5/5 on
-  German queries vs. 2/5 for nomic-embed-text) with SQLite storage and
-  cosine ranking. Zero cloud, zero new dependencies.
+  base — Ollama embeddings (default `snowflake-arctic-embed2`, multilingual:
+  hit@1 5/5 on German queries vs. 2/5 for nomic-embed-text; bge-m3 also hit
+  5/5 but produced NaN embeddings for specific inputs on Ollama 0.17 and was
+  rejected for reliability) with SQLite storage and cosine ranking. Zero
+  cloud, zero new dependencies.
 
 All production capabilities are measured and validated —
 see [docs/mittelstand-validierung.md](docs/mittelstand-validierung.md).

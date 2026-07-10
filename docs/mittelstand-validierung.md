@@ -92,14 +92,14 @@ Rechtsunsicherheit → DSGVO-Routen, Observability, On-Premise-Deployment.
 | Prüfung | Ergebnis |
 |---|---|
 | Jest (Schema-Vertrag im Prompt, Fence-Toleranz, Korrektur-Retry, Typ-Checks, fail-explicit) | 13/13 grün |
-| GPU-Probe Feld-Genauigkeit (5 deutsche Belege × 5 Seeds, Vertrag vs. reiner JSON-Wunsch) | _nach Bench-Ende eingetragen_ |
+| GPU-Probe Feld-Genauigkeit (5 deutsche Belege × 5 Seeds, llama3.1) | Vertrag (`responseSchema`): **100/100 Felder korrekt, 0 fehlgeschlagene Läufe**. Plain-Arm („antworte als JSON" ohne Vertrag): 0/100 — alle 25 Läufe scheiterten End-to-End, weil rohes JSON das Text-Protokoll verletzt. Die Probe fand zuerst einen echten Bug (Modell verschmilzt Protokoll- und Schema-Vertrag zu `ACTION/ANSWER\n{…}` → 0/100 auch im Vertrags-Arm); Fix: Schema-valides JSON wird als Antwort gerettet — danach 100/100 |
 
 ## 6d — Lokales RAG (`SqliteKnowledgeStore` + `knowledge.search`)
 
 | Prüfung | Ergebnis |
 |---|---|
 | Jest (Cosine-Ranking, Persistenz, Tool-Integration) | 5/5 grün |
-| Embedding-Modellwahl (8 deutsche Firmendokumente, 5 Queries, GPU) | nomic-embed-text hit@1 **2/5** (mit Task-Präfixen 1/5) → **bge-m3 hit@1 5/5, hit@3 5/5** ⇒ bge-m3 ist Default (EU-/Mehrsprachigkeit) |
+| Embedding-Modellwahl (8 deutsche Firmendokumente, 5 Queries, GPU) | nomic-embed-text hit@1 **2/5** (mit Task-Präfixen 1/5) · bge-m3 hit@1 5/5, aber **disqualifiziert**: deterministische NaN-Embeddings für bestimmte Token-Sequenzen auf Ollama 0.17 (500er) · **snowflake-arctic-embed2 hit@1 5/5, hit@3 5/5, stabil** ⇒ Default (embeddinggemma ebenfalls 5/5, Alternative) |
 
 ## 6e — Approval-Gate (Human-in-the-Loop)
 

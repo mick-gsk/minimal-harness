@@ -232,20 +232,21 @@
       <h1>Local models fail at tool-calling.<br><span class="ok">A 1&nbsp;kLOC harness fixes most of it</span> — measured.</h1>
       <p class="abstract"><span class="k">&gt;</span> Same model, same tasks, five harnesses — plus neutral
         third-party tasks from the <b>Berkeley Function Calling Leaderboard</b>. A minimal TypeScript harness
-        (prompt protocol, single-call turns, error feedback) lifts llama3.1 from <b>54% to 94%</b> task
-        success, beats Hugging Face smolagents off-the-shelf on weak models, and holds its edge on data it
-        never saw. Every number below carries its confidence interval and its counter-evidence.</p>
+        (prompt protocol, single-call turns, error feedback) lifts llama3.1 from <b>56% to 92%</b> task
+        success (official k=5 run, 250 runs per cell), beats Hugging Face smolagents off-the-shelf on weak
+        models, and holds its edge on data it never saw. Every number below carries its confidence interval
+        and its counter-evidence.</p>
     </header>
 
     <!-- 01 -->
     <section aria-label="Headline results">
-      <div class="shead"><span class="glyph">┌─</span><span class="n">01</span><h2>Results at a glance</h2><span class="line"></span><span class="flag">llama3.1 · n=50 per cell</span></div>
+      <div class="shead"><span class="glyph">┌─</span><span class="n">01</span><h2>Results at a glance</h2><span class="line"></span><span class="flag">llama3.1 · official k=5 · n=250 per cell</span></div>
       <div class="values">
-        <div class="val" data-tag="frozen in-house suite · v2">
-          <div class="num">54 <span style="color:var(--faint)">→</span> <span class="to">94</span><span class="u">%</span></div>
+        <div class="val" data-tag="frozen in-house suite · v2 · k=5 official">
+          <div class="num">56 <span style="color:var(--faint)">→</span> <span class="to">92</span><span class="u">%</span></div>
           <div class="vs">task success · native tool-calling → <b>minimal-harness</b></div>
-          <div class="delta">+40 pp · CIs disjoint — significant</div>
-          <div class="fine">qwen3:8b: 82 → 90% (+8 pp, n.s.) — the harness pays off most where models are weakest</div>
+          <div class="delta">+36 pp · CIs disjoint — significant · at half the latency</div>
+          <div class="fine">qwen3:8b: 85 → 90% (+4.8 pp, n.s.) — the harness pays off most where models are weakest</div>
         </div>
         <div class="val" data-tag="neutral terrain · BFCL v4 (Berkeley)">
           <div class="num">58 <span style="color:var(--faint)">→</span> <span class="to">82</span><span class="u">%</span></div>

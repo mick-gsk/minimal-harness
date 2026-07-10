@@ -46,7 +46,7 @@ volumes:
 ```
 
 Modelle einmalig laden: `docker compose exec ollama ollama pull qwen3:8b`
-(plus `bge-m3`, wenn `KNOWLEDGE_DB` gesetzt ist).
+(plus `snowflake-arctic-embed2`, wenn `KNOWLEDGE_DB` gesetzt ist).
 
 ## Umgebungsvariablen
 
@@ -58,9 +58,17 @@ Modelle einmalig laden: `docker compose exec ollama ollama pull qwen3:8b`
 | `OLLAMA_MODEL` | nein | qwen3:8b | Chat-Modell |
 | `MEMORY_DB` | nein | ./agent-memory.db | SQLite-Datei der Sessions (Volume!) |
 | `KNOWLEDGE_DB` | nein | — | aktiviert das RAG-Tool `knowledge.search` |
-| `EMBED_MODEL` | nein | bge-m3 | Embedding-Modell (multilingual, s. Validierung) |
+| `EMBED_MODEL` | nein | snowflake-arctic-embed2 | Embedding-Modell (multilingual & stabil, s. Validierung) |
 | `REQUIRE_APPROVAL` | nein | — | Tools mit Human-in-the-Loop-Freigabe |
 | `SYSTEM_INSTRUCTION` | nein | — | eigener System-Prompt |
+
+## Hardware-Planung (VRAM)
+
+Chat- und Embedding-Modell teilen sich die GPU. Faustregel: 8B-Chat-Modell
+(q4) ≈ 10–11 GB + Embedding-Modell ≈ 1,2 GB — auf einer 12-GB-Karte wird es eng und
+Ollama evictet Modelle im Wechsel (sichtbar als sporadische 500er beim
+Embedding unter Last). Für den Mischbetrieb Chat+RAG: 16 GB einplanen oder
+`OLLAMA_CONTEXT_LENGTH` reduzieren (Kontext ist der größte VRAM-Hebel).
 
 ## Betrieb
 

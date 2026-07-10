@@ -7,7 +7,7 @@
  *   OLLAMA_MODEL      default qwen3:8b
  *   MEMORY_DB         default ./agent-memory.db (mount a volume in Docker)
  *   KNOWLEDGE_DB      optional — enables the knowledge.search tool
- *   EMBED_MODEL       default bge-m3 (multilingual)
+ *   EMBED_MODEL       default snowflake-arctic-embed2 (multilingual, stable)
  *   REQUIRE_APPROVAL  optional, comma-separated tool names needing approval
  *   SYSTEM_INSTRUCTION optional system prompt override
  *

@@ -6,10 +6,10 @@ export interface Embedder {
 export interface OllamaEmbedderConfig {
   baseUrl: string;
   /**
-   * Default bge-m3: multilingual — measured hit@1 5/5 on German queries where
-   * nomic-embed-text scored 2/5 (bench/rag-probe.ts). For English-only
-   * corpora nomic-embed-text is a lighter alternative (set the store's
-   * task prefixes for it).
+   * Default snowflake-arctic-embed2: multilingual and numerically stable —
+   * measured hit@1 5/5 on German queries (bench/rag-probe.ts) where
+   * nomic-embed-text scored 2/5 and bge-m3 (also 5/5) produced NaN
+   * embeddings for specific token sequences on Ollama 0.17 (500 errors).
    */
   model?: string;
 }
@@ -22,7 +22,7 @@ export class OllamaEmbedder implements Embedder {
     const res = await fetch(`${this.config.baseUrl}/api/embed`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: this.config.model ?? "bge-m3", input: texts }),
+      body: JSON.stringify({ model: this.config.model ?? "snowflake-arctic-embed2", input: texts }),
     });
     if (!res.ok) {
       throw new Error(`Ollama embed request failed: ${res.status} ${res.statusText}`);
