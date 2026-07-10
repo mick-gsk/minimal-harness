@@ -2,6 +2,7 @@ import { describe, it, expect } from "@jest/globals";
 import {
   normalizeBfclParameters,
   matchesGroundTruth,
+  matchesGroundTruthSet,
   buildBfclTasks,
   type BfclEntry,
   type BfclGroundTruth,
@@ -107,6 +108,43 @@ describe("matchesGroundTruth", () => {
   });
 });
 
+describe("matchesGroundTruthSet (BFCL parallel)", () => {
+  // Real shape (possible_answer/BFCL_v4_parallel.json, parallel_0): the same
+  // function twice with different args — set matching, not alternatives.
+  const gt: BfclGroundTruth = [
+    { "spotify.play": { artist: ["Taylor Swift"], duration: [20] } },
+    { "spotify.play": { artist: ["Maroon 5"], duration: [15] } },
+  ];
+
+  it("matches when every expected call is present exactly once (any order)", () => {
+    expect(
+      matchesGroundTruthSet(
+        [
+          { name: "spotify.play", args: { artist: "Maroon 5", duration: 15 } },
+          { name: "spotify.play", args: { artist: "Taylor Swift", duration: 20 } },
+        ],
+        gt,
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects missing, duplicate-instead-of-distinct, and extra calls", () => {
+    const swift = { name: "spotify.play", args: { artist: "Taylor Swift", duration: 20 } };
+    expect(matchesGroundTruthSet([swift], gt)).toBe(false); // one missing
+    expect(matchesGroundTruthSet([swift, swift], gt)).toBe(false); // same gt entry twice
+    expect(
+      matchesGroundTruthSet(
+        [
+          swift,
+          { name: "spotify.play", args: { artist: "Maroon 5", duration: 15 } },
+          { name: "spotify.play", args: { artist: "Queen", duration: 10 } },
+        ],
+        gt,
+      ),
+    ).toBe(false); // extra call
+  });
+});
+
 describe("buildBfclTasks", () => {
   it("builds a simple task that records the first executed call and scores it", async () => {
     const [task] = buildBfclTasks({
@@ -125,6 +163,30 @@ describe("buildBfclTasks", () => {
     const tools2 = task!.makeTools(world2);
     await tools2[0]!.execute({ base: 3, height: 5 });
     expect(task!.check(resultStub(), world2)).toBe(false);
+  });
+
+  it("builds multiple/parallel tasks with the right categories and scoring", async () => {
+    const gt: BfclGroundTruth = [
+      { calculate_triangle_area: { base: [10], height: [5], unit: ["units", ""] } },
+      { calculate_triangle_area: { base: [3], height: [4], unit: ["units", ""] } },
+    ];
+    const tasks = buildBfclTasks({
+      simple: [],
+      irrelevance: [],
+      multiple: [{ entry: simpleEntry, groundTruth }],
+      parallel: [{ entry: simpleEntry, groundTruth: gt }],
+    });
+    expect(tasks.map((t) => t.category)).toEqual(["multi-tool", "multi-step"]);
+
+    const parallelTask = tasks[1]!;
+    const world = new WorldState();
+    const tools = parallelTask.makeTools(world);
+    await tools[0]!.execute({ base: 10, height: 5 });
+    expect(parallelTask.check(resultStub(), world)).toBe(false); // only 1 of 2
+    await tools[0]!.execute({ base: 3, height: 4 });
+    expect(parallelTask.check(resultStub(), world)).toBe(true);
+    // parallel needs one turn per call plus answer + slack
+    expect(parallelTask.maxTurns).toBeGreaterThanOrEqual(4);
   });
 
   it("scores irrelevance as success only when no tool call was attempted", () => {

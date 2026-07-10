@@ -128,6 +128,22 @@ export function matchesGroundTruth(call: RecordedCall, groundTruth: BfclGroundTr
   return false;
 }
 
+/**
+ * BFCL parallel check: every ground-truth call must be matched by a DISTINCT
+ * recorded call and no extra calls remain — order-independent set matching
+ * (greedy; sound here because allowed-value lists make matches near-exact).
+ */
+export function matchesGroundTruthSet(calls: RecordedCall[], groundTruth: BfclGroundTruth): boolean {
+  if (calls.length !== groundTruth.length) return false;
+  const used = new Array<boolean>(calls.length).fill(false);
+  for (const gtEntry of groundTruth) {
+    const idx = calls.findIndex((c, i) => !used[i] && matchesGroundTruth(c, [gtEntry]));
+    if (idx === -1) return false;
+    used[idx] = true;
+  }
+  return true;
+}
+
 const CALLS_KEY = "__bfcl_calls";
 
 function recordedCalls(world: WorldState): RecordedCall[] {
@@ -157,27 +173,55 @@ function promptOf(entry: BfclEntry): string {
 export interface BfclTaskInputs {
   simple: Array<{ entry: BfclEntry; groundTruth: BfclGroundTruth }>;
   irrelevance: Array<{ entry: BfclEntry }>;
+  /** Pick the right function among several, one call (scored like simple). */
+  multiple?: Array<{ entry: BfclEntry; groundTruth: BfclGroundTruth }>;
+  /** Several calls required; scored as an order-independent set. */
+  parallel?: Array<{ entry: BfclEntry; groundTruth: BfclGroundTruth }>;
 }
 
 /**
- * simple: success = the first executed call matches ground truth.
+ * simple/multiple: success = the first executed call matches ground truth.
+ * parallel: success = executed calls match the ground-truth set exactly.
  * irrelevance: success = zero tool-call attempts and a real final answer.
- * maxTurns 3: one call turn + one answer turn + one slack turn for a retry.
+ * maxTurns 3: one call turn + one answer turn + one slack turn for a retry;
+ * parallel gets one turn per expected call instead of the single call turn.
  */
 export function buildBfclTasks(inputs: BfclTaskInputs): BenchTask[] {
   const tasks: BenchTask[] = [];
 
+  const firstCallTask = (
+    entry: BfclEntry,
+    groundTruth: BfclGroundTruth,
+    category: "single-tool" | "multi-tool",
+  ): BenchTask => ({
+    id: `bfcl-${entry.id}`,
+    category,
+    prompt: promptOf(entry),
+    maxTurns: 3,
+    makeTools: (world) => entry.function.map((f) => specToTool(f, world)),
+    check: (_result: BenchRunResult, world: WorldState) => {
+      const calls = recordedCalls(world);
+      return calls.length > 0 && matchesGroundTruth(calls[0]!, groundTruth);
+    },
+  });
+
   for (const { entry, groundTruth } of inputs.simple) {
+    tasks.push(firstCallTask(entry, groundTruth, "single-tool"));
+  }
+
+  for (const { entry, groundTruth } of inputs.multiple ?? []) {
+    tasks.push(firstCallTask(entry, groundTruth, "multi-tool"));
+  }
+
+  for (const { entry, groundTruth } of inputs.parallel ?? []) {
     tasks.push({
       id: `bfcl-${entry.id}`,
-      category: "single-tool",
+      category: "multi-step",
       prompt: promptOf(entry),
-      maxTurns: 3,
+      maxTurns: groundTruth.length + 2,
       makeTools: (world) => entry.function.map((f) => specToTool(f, world)),
-      check: (_result: BenchRunResult, world: WorldState) => {
-        const calls = recordedCalls(world);
-        return calls.length > 0 && matchesGroundTruth(calls[0]!, groundTruth);
-      },
+      check: (_result: BenchRunResult, world: WorldState) =>
+        matchesGroundTruthSet(recordedCalls(world), groundTruth),
     });
   }
 

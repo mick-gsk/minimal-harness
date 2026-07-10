@@ -21,6 +21,10 @@ export const BFCL_FILES = [
   "BFCL_v4_simple_python.json",
   "possible_answer/BFCL_v4_simple_python.json",
   "BFCL_v4_irrelevance.json",
+  "BFCL_v4_multiple.json",
+  "possible_answer/BFCL_v4_multiple.json",
+  "BFCL_v4_parallel.json",
+  "possible_answer/BFCL_v4_parallel.json",
 ] as const;
 
 const here = dirname(fileURLToPath(import.meta.url));
