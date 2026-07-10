@@ -14,6 +14,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { OllamaClient } from "../src/index.js";
 import { DEFAULT_BASE_URL, DEFAULT_MODELS, TEMPERATURE } from "./config.js";
 import { suiteV2 } from "./tasks/frozen/suite-v2.js";
+import { loadBfclSuite } from "./bfcl/suite.js";
 import { makeMinimalHarness, SYSTEM_INSTRUCTION } from "./harnesses/minimal.js";
 import { runMatrix } from "./run-matrix.js";
 import { buildReport } from "./reporter.js";
@@ -38,6 +39,15 @@ const VARIANTS = [
   },
 ] as const;
 
+// BENCH_SUITE=v2 (default) | bfcl — prompt fit matters most on neutral
+// terrain, so the ablation must be runnable on both.
+const suiteEnv = process.env.BENCH_SUITE ?? "v2";
+if (!["v2", "bfcl"].includes(suiteEnv)) {
+  console.error(`✗ Unbekannte BENCH_SUITE '${suiteEnv}' — erlaubt: v2, bfcl`);
+  process.exit(1);
+}
+const tasks = suiteEnv === "bfcl" ? loadBfclSuite() : suiteV2;
+
 const baseUrl = process.env.OLLAMA_BASE_URL ?? DEFAULT_BASE_URL;
 const modelNames = (process.env.BENCH_MODELS ?? DEFAULT_MODELS.join(","))
   .split(",")
@@ -54,7 +64,7 @@ console.log(
 );
 
 const records = await runMatrix({
-  tasks: suiteV2,
+  tasks,
   harnesses,
   models,
   seeds: [SEED],
@@ -71,7 +81,7 @@ const records = await runMatrix({
 
 const meta = {
   date: new Date().toISOString().slice(0, 10),
-  suiteVersion: "suite-v2 PROMPT-ABLATION PROBE (NICHT reportfähig)",
+  suiteVersion: `${suiteEnv} PROMPT-ABLATION PROBE (NICHT reportfähig)`,
   seeds: [SEED],
   temperature: TEMPERATURE,
   k: 1,
