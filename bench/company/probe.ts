@@ -190,6 +190,8 @@ interface FactRunResult {
   note: string;
   /** Full final answer when one was produced — persisted to results.jsonl. */
   answer?: string;
+  /** Last raw assistant output on abnormal termination — the diagnosis evidence. */
+  raw?: string;
 }
 
 async function runFact(fact: CompanyFact, seed: number): Promise<FactRunResult> {
@@ -220,7 +222,11 @@ async function runFact(fact: CompanyFact, seed: number): Promise<FactRunResult> 
   try {
     const result = await loop.run({ sessionId: `${fact.id}-${seed}`, userMessage: fact.frage, maxTurns: MAX_TURNS });
     if (result.terminatedReason !== "final_answer") {
-      return { ok: false, note: `terminated: ${result.terminatedReason}` };
+      return {
+        ok: false,
+        note: `terminated: ${result.terminatedReason}`,
+        raw: result.rawTurns.at(-1)?.rawAssistantOutput?.slice(0, 2000),
+      };
     }
     return {
       ok: fact.check(normalize(result.finalAnswer)),
@@ -255,10 +261,10 @@ async function main(): Promise<void> {
     const marks: string[] = [];
     let lastFailNote = "";
     for (const seed of SEEDS) {
-      const { ok, note, answer } = await runFact(fact, seed);
+      const { ok, note, answer, raw } = await runFact(fact, seed);
       appendFileSync(
         resultLog,
-        JSON.stringify({ ts: new Date().toISOString(), model: MODEL, harness: HARNESS, think: THINK, seed, factId: fact.id, typ: fact.typ, ok, note: answer === undefined ? note : undefined, answer }) + "\n",
+        JSON.stringify({ ts: new Date().toISOString(), model: MODEL, harness: HARNESS, think: THINK, seed, factId: fact.id, typ: fact.typ, ok, note: answer === undefined ? note : undefined, answer, raw }) + "\n",
       );
       marks.push(ok ? "✓" : "✗");
       if (ok) {
