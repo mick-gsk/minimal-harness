@@ -182,6 +182,9 @@ async function runFact(fact: CompanyFact, seed: number): Promise<FactRunResult> 
     promptBuilder: new DefaultPromptBuilder(),
     systemInstruction: SYSTEM_INSTRUCTION,
     ...(HARNESS === "minimal@nt" ? { nativeToolCalling: true } : {}),
+    // Answer verification: one extra LLM call re-checks the final answer
+    // against the collected tool results before it ships (core feature).
+    ...(HARNESS === "minimal@verify" ? { verifyFinalAnswer: true } : {}),
     // Research config: up to 4 tool calls per turn, executed in parallel.
     // 4 because tool results land in context: 4 reads x ~1.5k tokens ≈ 6k
     // per turn still fits the 16k window with memory folding; smolagents'
