@@ -76,6 +76,78 @@ export function makeFsReadTool(root: string): ToolDefinition<{ path: string }, {
   };
 }
 
+/**
+ * Search caps: enough hits to locate a document, small enough that one broad
+ * query ("Feder") cannot flood the context window.
+ */
+const MAX_SEARCH_MATCHES = 20;
+const MAX_EXCERPT_CHARS = 160;
+
+function walkFiles(root: string, dir: string, out: string[]): void {
+  for (const name of readdirSync(dir).sort()) {
+    const abs = join(dir, name);
+    if (statSync(abs).isDirectory()) {
+      walkFiles(root, abs, out);
+    } else {
+      out.push(abs.slice(root.length + 1));
+    }
+  }
+}
+
+export function makeFsSearchTool(root: string): ToolDefinition<{ query: string; path?: string }, { matches: string[]; note?: string }> {
+  return {
+    name: "fs.search",
+    description:
+      "Full-text search across the company files (fileserver/, mail/, ad/) — like the search box on the fileserver. Case-insensitive substring match against file names and file contents; returns 'path:line: excerpt'. Use this to locate documents before reading them.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search terms, e.g. 'DF-12040 Wittenbrink'. Multiple terms are AND-combined per file." },
+        path: { type: "string", description: "Optional: limit to a subtree, e.g. 'mail'." },
+      },
+      required: ["query"],
+      additionalProperties: false,
+    },
+    async execute(input) {
+      // Models issue multi-word queries; every real enterprise search
+      // (Outlook, Windows search) ANDs terms at file level — so do we.
+      const terms = input.query.toLowerCase().split(/\s+/).filter((t) => t.length >= 2);
+      if (terms.length === 0) throw new Error("query too short — use at least 2 characters");
+      const base = resolveInside(root, input.path ?? ".");
+      const files: string[] = [];
+      walkFiles(root, base, files);
+      const matches: string[] = [];
+      for (const rel of files) {
+        if (matches.length >= MAX_SEARCH_MATCHES) break;
+        const relLower = rel.toLowerCase();
+        const buf = readFileSync(join(root, rel));
+        const text = buf.subarray(0, 1024).includes(0) ? "" : decodeSmart(buf); // binary: filename only
+        const haystack = relLower + "\n" + text.toLowerCase();
+        if (!terms.every((t) => haystack.includes(t))) continue;
+        if (terms.some((t) => relLower.includes(t)) || text === "") {
+          matches.push(`${rel} (Dateiname)`);
+        }
+        const lines = text.split(/\r?\n/);
+        let perFile = 0;
+        for (let i = 0; i < lines.length && matches.length < MAX_SEARCH_MATCHES && perFile < 3; i++) {
+          const lineLower = lines[i].toLowerCase();
+          if (terms.some((t) => lineLower.includes(t))) {
+            matches.push(`${rel}:${i + 1}: ${lines[i].trim().slice(0, MAX_EXCERPT_CHARS)}`);
+            perFile++;
+          }
+        }
+      }
+      const note =
+        matches.length >= MAX_SEARCH_MATCHES
+          ? "more matches exist — refine the query"
+          : matches.length === 0
+            ? "no matches — try fewer or different keywords"
+            : undefined;
+      return { matches, ...(note ? { note } : {}) };
+    },
+  };
+}
+
 export function makeErpQueryTool(dbPath: string): ToolDefinition<{ sql: string }, { rows: unknown[] }> {
   return {
     name: "erp.query",
@@ -108,6 +180,7 @@ export function makeCompanyTools(corpusRoot: string): ToolDefinition[] {
   return [
     makeFsListTool(root),
     makeFsReadTool(root),
+    makeFsSearchTool(root),
     makeErpQueryTool(join(root, "erp", "erp.sqlite")),
   ] as ToolDefinition[];
 }

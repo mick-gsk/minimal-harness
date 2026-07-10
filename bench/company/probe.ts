@@ -13,6 +13,7 @@
  */
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import type { ChatMessage } from "../../src/index.js";
 import { DefaultAgentLoop } from "../../src/core/agent-loop.js";
 import { DefaultPromptBuilder } from "../../src/core/prompt-builder.js";
 import { StructuredOutputValidator } from "../../src/guardrails/validator.js";
@@ -33,6 +34,10 @@ const THINK = process.env.COMPANY_THINK !== "0";
 // 12 turns: hardest facts need list -> read -> cross-check across 3 systems,
 // observed depth is 6-9 calls; 12 leaves headroom without masking loops.
 const MAX_TURNS = 12;
+// "minimal" = the harness under test; "native" = the fair competitor baseline
+// (straight Ollama function calling, no retries/recovery — mirrors
+// bench/harnesses/ollama-native.ts but with the same deployment prompt).
+const HARNESS = process.env.COMPANY_HARNESS ?? "minimal";
 
 const CORPUS = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "company", "out", "corpus");
 
@@ -83,14 +88,69 @@ const SYSTEM_INSTRUCTION =
   "Du bist der interne Wissensassistent der Selkinghaus Federn- und Stanztechnik GmbH (Lüdenscheid). " +
   "Dir stehen vier Datenquellen zur Verfügung: der Fileserver (Ordner 'fileserver/', per fs.list erkunden und fs.read lesen), " +
   "das E-Mail-Archiv (Ordner 'mail/'), die Active-Directory-Exporte (Ordner 'ad/': users.csv, groups.csv, acls.csv) " +
-  "und das ERP (per erp.query, SQL). " +
-  "Recherchiere gründlich und systematisch: verschaffe dir erst einen Überblick, lies relevante Dokumente und Mails vollständig, " +
+  "und das ERP (per erp.query, SQL). Mit fs.search durchsuchst du alle Dateien und Mails im Volltext nach Stichwörtern. " +
+  "Recherchiere gründlich und systematisch: suche zuerst per fs.search nach den Stichwörtern der Frage, lies relevante Dokumente und Mails vollständig, " +
   "und prüfe bei Zahlen auch das ERP. Nenne konkrete Zahlen und Quellen. " +
   "Wenn Quellen sich widersprechen, benenne den Widerspruch offen. " +
   "Wenn eine Information nirgends dokumentiert ist, sage klar, dass sie nicht ableitbar ist — rate niemals. " +
   "Antworte auf Deutsch.";
 
+/**
+ * Competitor baseline: what a developer writes out of the box against
+ * Ollama's native tool calling. Same model config, same deployment prompt,
+ * same tools, same turn budget — no protocol, no retries, no recovery.
+ */
+async function runFactNative(fact: CompanyFact, seed: number): Promise<{ ok: boolean; note: string }> {
+  const tools = makeCompanyTools(CORPUS);
+  const byName = new Map(tools.map((t) => [t.name, t]));
+  const llm = new OllamaClient({
+    baseUrl: BASE_URL,
+    model: MODEL,
+    defaultSeed: seed,
+    defaultTemperature: TEMPERATURE,
+    think: THINK,
+    numCtx: 16384,
+  });
+  const toolSpecs = tools.map((t) => ({
+    name: t.name,
+    description: t.description,
+    parameters: t.inputSchema as unknown as Record<string, unknown>,
+  }));
+  const messages: ChatMessage[] = [
+    { role: "system", content: SYSTEM_INSTRUCTION },
+    { role: "user", content: fact.frage },
+  ];
+  try {
+    for (let turn = 0; turn < MAX_TURNS; turn++) {
+      const res = await llm.generate(messages, { tools: toolSpecs });
+      if (res.toolCalls && res.toolCalls.length > 0) {
+        messages.push({ role: "assistant", content: res.content });
+        for (const call of res.toolCalls) {
+          const tool = byName.get(call.name);
+          let payload: string;
+          if (!tool) {
+            payload = JSON.stringify({ tool: call.name, error: "unknown tool" });
+          } else {
+            try {
+              payload = JSON.stringify({ tool: call.name, result: await tool.execute(call.arguments) });
+            } catch (err) {
+              payload = JSON.stringify({ tool: call.name, error: err instanceof Error ? err.message : String(err) });
+            }
+          }
+          messages.push({ role: "tool", content: payload });
+        }
+        continue;
+      }
+      return { ok: fact.check(normalize(res.content)), note: res.content.replace(/\s+/g, " ").slice(0, 110) };
+    }
+    return { ok: false, note: "terminated: max_turns" };
+  } catch (err) {
+    return { ok: false, note: `error: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+
 async function runFact(fact: CompanyFact, seed: number): Promise<{ ok: boolean; note: string }> {
+  if (HARNESS === "native") return runFactNative(fact, seed);
   const toolBridge = new DefaultToolBridge();
   for (const tool of makeCompanyTools(CORPUS)) toolBridge.register(tool);
   const loop = new DefaultAgentLoop({
@@ -128,13 +188,17 @@ async function runFact(fact: CompanyFact, seed: number): Promise<{ ok: boolean; 
 
 async function main(): Promise<void> {
   console.log(
-    `\n=== company probe → ${BASE_URL} model=${MODEL} seeds=${SEEDS.join(",")} temp=${TEMPERATURE} think=${THINK} facts=${FACTS.length} ===\n`,
+    `\n=== company probe → ${BASE_URL} model=${MODEL} harness=${HARNESS} seeds=${SEEDS.join(",")} temp=${TEMPERATURE} think=${THINK} facts=${FACTS.length} ===\n`,
   );
   const byType = new Map<string, { ok: number; total: number }>();
   const perSeed = new Map<number, number>();
   let passed = 0;
 
-  for (const fact of FACTS) {
+  // Smoke filter, e.g. COMPANY_FACTS=f01,f13 — full runs leave it unset.
+  const only = process.env.COMPANY_FACTS?.split(",");
+  const facts = only ? FACTS.filter((f) => only.includes(f.id)) : FACTS;
+
+  for (const fact of facts) {
     const marks: string[] = [];
     let lastFailNote = "";
     for (const seed of SEEDS) {
@@ -155,9 +219,9 @@ async function main(): Promise<void> {
     if (lastFailNote) console.log(`    ✗→ ${lastFailNote} (erwartet: ${fact.erwartung})`);
   }
 
-  const total = FACTS.length * SEEDS.length;
+  const total = facts.length * SEEDS.length;
   console.log(`\ngesamt: ${passed}/${total} (${((100 * passed) / total).toFixed(0)}%)`);
-  for (const [seed, n] of perSeed) console.log(`  seed ${seed}: ${n}/${FACTS.length}`);
+  for (const [seed, n] of perSeed) console.log(`  seed ${seed}: ${n}/${facts.length}`);
   for (const [typ, { ok, total: t }] of byType) console.log(`  ${typ}: ${ok}/${t}`);
   console.log();
 }
