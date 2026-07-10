@@ -37,9 +37,12 @@ const THINK = process.env.COMPANY_THINK !== "0";
 // 12 turns: hardest facts need list -> read -> cross-check across 3 systems,
 // observed depth is 6-9 calls; 12 leaves headroom without masking loops.
 const MAX_TURNS = 12;
-// "minimal" = the harness under test; "native" = the fair competitor baseline
-// (straight Ollama function calling, no retries/recovery — mirrors
-// bench/harnesses/ollama-native.ts but with the same deployment prompt).
+// "minimal" = the harness under test (text protocol); "minimal@nt" = the
+// harness in nativeToolCalling mode (same loop/memory/policy, tool specs via
+// API — the right config for models trained on function calling, e.g. llama);
+// "native" = the fair competitor baseline (straight Ollama function calling,
+// no retries/recovery — mirrors bench/harnesses/ollama-native.ts but with the
+// same deployment prompt); smolagents-* = Hugging Face's library, off-the-shelf.
 const HARNESS = process.env.COMPANY_HARNESS ?? "minimal";
 
 const CORPUS = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "company", "out", "corpus");
@@ -217,6 +220,7 @@ async function runFact(fact: CompanyFact, seed: number): Promise<FactRunResult> 
     validator: new StructuredOutputValidator(),
     promptBuilder: new DefaultPromptBuilder(),
     systemInstruction: SYSTEM_INSTRUCTION,
+    ...(HARNESS === "minimal@nt" ? { nativeToolCalling: true } : {}),
   });
 
   try {
