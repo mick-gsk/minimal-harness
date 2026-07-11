@@ -147,9 +147,10 @@ export function makeFsSearchTool(root: string): ToolDefinition<{ query: string; 
         const lines = text.split(/\r?\n/);
         let perFile = 0;
         for (let i = 0; i < lines.length && matches.length < MAX_SEARCH_MATCHES && perFile < 3; i++) {
-          const lineLower = lines[i].toLowerCase();
-          if (terms.some((t) => lineLower.includes(t))) {
-            matches.push(`${rel}:${i + 1}: ${lines[i].trim().slice(0, MAX_EXCERPT_CHARS)}`);
+          const line = lines[i];
+          if (line === undefined) continue;
+          if (terms.some((t) => line.toLowerCase().includes(t))) {
+            matches.push(`${rel}:${i + 1}: ${line.trim().slice(0, MAX_EXCERPT_CHARS)}`);
             perFile++;
           }
         }

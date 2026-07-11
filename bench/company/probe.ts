@@ -24,7 +24,7 @@ import { OllamaClient } from "../../src/llm/ollama-client.js";
 import { runSidecar, smolagentsAvailable } from "../harnesses/smolagents.js";
 import { startWorldBridge } from "../bridge/world-http-bridge.js";
 import { makeCompanyTools } from "./tools.js";
-import { FACTS, normalize, type CompanyFact } from "./facts.js";
+import { BINARY_FACTS, FACTS, SYSTEM_FACTS, normalize, type CompanyFact } from "./facts.js";
 
 const BASE_URL = process.env.OLLAMA_BASE_URL ?? "http://localhost:11434";
 const MODEL = process.env.OLLAMA_MODEL ?? "qwen3:8b";
@@ -50,18 +50,20 @@ const CORPUS = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "compan
 
 // A real deployment tells its assistant which systems exist — that is
 // configuration, not answer-leaking. Nothing here names a fact or a file
-// that answers a question. COMPANY_PROMPT=2 adds one sentence of generic
-// research method (persistence + query variation) — the calibration any
-// company does on its assistant instruction; every arm gets the same prompt.
-const PROMPT_VERSION = process.env.COMPANY_PROMPT === "2" ? 2 : 1;
+// that answers a question. Versions 1/2 targeted company v1 (4 systems) and
+// are retired with it; v3 is the company-v2 baseline (7 systems), v4 adds one
+// sentence of research persistence (helped qwen's FC path on v1, HURT llama).
+const PROMPT_VERSION = process.env.COMPANY_PROMPT === "4" ? 4 : 3;
 const SYSTEM_INSTRUCTION =
   "Du bist der interne Wissensassistent der Selkinghaus Federn- und Stanztechnik GmbH (Lüdenscheid). " +
-  "Dir stehen vier Datenquellen zur Verfügung: der Fileserver (Ordner 'fileserver/', per fs.list erkunden und fs.read lesen), " +
-  "das E-Mail-Archiv (Ordner 'mail/'), die Active-Directory-Exporte (Ordner 'ad/': users.csv, groups.csv, acls.csv) " +
+  "Dir stehen sieben Datenquellen zur Verfügung: der Fileserver (Ordner 'fileserver/', per fs.list erkunden und fs.read lesen), " +
+  "das E-Mail-Archiv (Ordner 'mail/'), die Active-Directory-Exporte (Ordner 'ad/': users.csv, groups.csv, acls.csv), " +
+  "der DocuWare-DMS-Index (Ordner 'dms/'), die BDE-Maschinendaten-Exporte (Ordner 'bde/'), " +
+  "die DATEV-Buchungsstapel (Ordner 'datev/'), der PDM/CAD-Index (Ordner 'pdm/') " +
   "und das ERP (per erp.query, SQL). Mit fs.search durchsuchst du alle Dateien und Mails im Volltext nach Stichwörtern. " +
   "Recherchiere gründlich und systematisch: suche zuerst per fs.search nach den Stichwörtern der Frage, lies relevante Dokumente und Mails vollständig, " +
   "und prüfe bei Zahlen auch das ERP. Nenne konkrete Zahlen und Quellen. " +
-  (PROMPT_VERSION === 2
+  (PROMPT_VERSION === 4
     ? "Antworte erst, wenn du die relevanten Quellen wirklich gelesen hast — eine Frage braucht in der Regel mehrere Tool-Aufrufe (suchen, lesen, querprüfen). " +
       "Wenn eine Suche nichts findet, probiere andere Stichwörter (Synonyme, Teilbegriffe, Namen), bevor du aufgibst. "
     : "") +
@@ -208,10 +210,11 @@ async function runFact(fact: CompanyFact, seed: number): Promise<FactRunResult> 
   try {
     const result = await loop.run({ sessionId: `${fact.id}-${seed}`, userMessage: fact.frage, maxTurns: MAX_TURNS });
     if (result.terminatedReason !== "final_answer") {
+      const raw = result.rawTurns.at(-1)?.rawAssistantOutput?.slice(0, 2000);
       return {
         ok: false,
         note: `terminated: ${result.terminatedReason}`,
-        raw: result.rawTurns.at(-1)?.rawAssistantOutput?.slice(0, 2000),
+        ...(raw !== undefined ? { raw } : {}),
       };
     }
     return {
@@ -229,15 +232,21 @@ async function main(): Promise<void> {
     throw new Error("smolagents sidecar missing — see bench/smolagents/README");
   }
   console.log(
-    `\n=== company probe → ${BASE_URL} model=${MODEL} harness=${HARNESS} seeds=${SEEDS.join(",")} temp=${TEMPERATURE} think=${THINK} facts=${FACTS.length} ===\n`,
+    `\n=== company probe → ${BASE_URL} model=${MODEL} harness=${HARNESS} prompt=v${PROMPT_VERSION} set=${process.env.COMPANY_SET ?? "core"} seeds=${SEEDS.join(",")} temp=${TEMPERATURE} think=${THINK} ===\n`,
   );
   const byType = new Map<string, { ok: number; total: number }>();
   const perSeed = new Map<number, number>();
   let passed = 0;
 
+  // COMPANY_SET picks the question set: core (f01-f16, default), system
+  // (cross-system joins), binary (office-file-only answers), or all.
+  const set = process.env.COMPANY_SET ?? "core";
+  const pool =
+    set === "system" ? SYSTEM_FACTS : set === "binary" ? BINARY_FACTS : set === "all" ? [...FACTS, ...SYSTEM_FACTS, ...BINARY_FACTS] : FACTS;
+
   // Smoke filter, e.g. COMPANY_FACTS=f01,f13 — full runs leave it unset.
   const only = process.env.COMPANY_FACTS?.split(",");
-  const facts = only ? FACTS.filter((f) => only.includes(f.id)) : FACTS;
+  const facts = only ? pool.filter((f) => only.includes(f.id)) : pool;
 
   // Full answers as JSONL so failures can be analyzed (and checks recalibrated)
   // offline without re-burning GPU hours. 110-char console notes are not evidence.

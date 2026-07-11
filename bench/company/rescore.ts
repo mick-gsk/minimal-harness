@@ -9,7 +9,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { FACTS, normalize } from "./facts.js";
+import { BINARY_FACTS, FACTS, SYSTEM_FACTS, normalize } from "./facts.js";
 
 const file = process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), "results.jsonl");
 
@@ -27,7 +27,7 @@ interface Row {
   answer?: string;
 }
 
-const byId = new Map(FACTS.map((f) => [f.id, f]));
+const byId = new Map([...FACTS, ...SYSTEM_FACTS, ...BINARY_FACTS].map((f) => [f.id, f]));
 const latest = new Map<string, Row>();
 for (const line of readFileSync(file, "utf8").trim().split("\n")) {
   const row = JSON.parse(line) as Row;

@@ -11,4 +11,7 @@ bench/bfcl/data/
 company/out/
 results.jsonl
 knowledge.db
+knowledge.db-shm
+knowledge.db-wal
 results-company-v1.jsonl
+.playwright-mcp/

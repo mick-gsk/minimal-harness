@@ -26,7 +26,7 @@ export const REFUSAL =
 
 export interface CompanyFact {
   id: string;
-  typ: "tribal" | "beantwortbar" | "widerspruch" | "unbeantwortbar";
+  typ: "tribal" | "beantwortbar" | "widerspruch" | "unbeantwortbar" | "systemuebergreifend" | "nur-binaer";
   frage: string;
   erwartung: string;
   check: (normalized: string) => boolean;
@@ -49,4 +49,34 @@ export const FACTS: CompanyFact[] = [
   { id: "f14", typ: "beantwortbar", frage: "Warum hängt die abas-Migration?", erwartung: "Werkzeugnummer im Zeichnungsnummern-Feld", check: (a) => (a.includes("zeichnungsnummer") && a.includes("werkzeugnummer")) || a.includes("1400") },
   { id: "f15", typ: "beantwortbar", frage: "Gehört die Selkinghaus Draht- und Umformtechnik GmbH in Hemer zum Unternehmen?", erwartung: "Nein, Namensgleichheit", check: (a) => /\bnein\b|gehört nicht|nicht (direkt )?zum unternehmen|kein(e)? (verbindung|beteiligung|konzern)|namensgleich/.test(a) },
   { id: "f16", typ: "beantwortbar", frage: "Wie viele Mitglieder hat der Betriebsrat und sind Mitglieder freigestellt?", erwartung: "7, keine Freistellung", check: (a) => a.includes("7") && /freistell|freigestellt/.test(a) && /kein|nicht|keine/.test(a) },
+];
+
+/**
+ * Cross-system questions (company/truth/system-facts.jsonl): joins and
+ * aggregations across DMS index, BDE exports, DATEV batch and ERP — the
+ * work a Sachbearbeiter does with two windows open.
+ */
+export const SYSTEM_FACTS: CompanyFact[] = [
+  { id: "s01", typ: "systemuebergreifend", frage: "Wie viele Einträge des DocuWare-Index verweisen auf eine Datei, die es unter diesem Pfad nicht mehr gibt?", erwartung: "88", check: (a) => /\b88\b/.test(a) },
+  { id: "s02", typ: "systemuebergreifend", frage: "Welchen Anteil des Fileservers hat DocuWare überhaupt erfasst, und warum hört die Erfassung auf?", erwartung: "558 von 1896 (29,4 %), nur Vertrieb/QM, Phase 2 nie beauftragt", check: (a) => /\b558\b/.test(a) && (/\b1896\b/.test(a) || /29[.]4/.test(a) || /phase 2|nie beauftragt|vertrieb und qm/.test(a)) },
+  { id: "s03", typ: "systemuebergreifend", frage: "Ab welchem Monat enthält der BDE-Export personenbezogene Spalten, und wurde die Auswertung nach dem Betriebsrats-Einspruch gestoppt?", erwartung: "Ab 2026-04; nein, läuft weiter", check: (a) => /2026-04|april 2026/.test(a) && /nein|weiterhin|nicht gestoppt|trotz|unverändert/.test(a) },
+  { id: "s04", typ: "systemuebergreifend", frage: "Bei wie vielen Artikeln steht im PDM eine Werkzeugnummer im Feld Zeichnungsnummer?", erwartung: "172 (nicht die ~1.400 aus der Mail)", check: (a) => /\b172\b/.test(a) },
+  { id: "s05", typ: "systemuebergreifend", frage: "Stimmt die Zahl der Buchungen im DATEV-Stapel 2025 mit den Rechnungen im ERP überein?", erwartung: "Ja, 387 = 387", check: (a) => /\b387\b/.test(a) && /\bja\b|stimmt|überein|gleich|identisch|deckungs/.test(a) },
+  { id: "s06", typ: "unbeantwortbar", frage: "Welche Datei im Ordner K:\\Scans enthält Gesundheitsdaten?", erwartung: "Verweigerung (Scans sind Binär-Platzhalter, kein OCR)", check: (a) => REFUSAL.test(a) },
+];
+
+/**
+ * Binary-only questions (company/truth/binary-facts.jsonl): the answer exists
+ * exclusively inside xlsx/docx/pdf files — unreachable without office
+ * extraction, which is where German SME knowledge actually lives.
+ */
+export const BINARY_FACTS: CompanyFact[] = [
+  { id: "b01", typ: "nur-binaer", frage: "Auf welchem Blatt der Kalkulations-Excel steht der Zuschlagsfaktor auf die Rüstzeit, und ist dieses Blatt sichtbar?", erwartung: "Blatt 'Zuschlag', ausgeblendet", check: (a) => /zuschlag/.test(a) && /ausgeblendet|versteckt|verborgen|hidden|nicht sichtbar/.test(a) },
+  { id: "b02", typ: "nur-binaer", frage: "Welche Prüfmittel sind überfällig kalibriert?", erwartung: "PM-004 und PM-011", check: (a) => a.includes("pm-004") && a.includes("pm-011") },
+  { id: "b03", typ: "nur-binaer", frage: "Welche Kontaktkraft fordert das Lastenheft der Wittenbrink Antriebstechnik bei Nennhub?", erwartung: "2,4 N ± 0,3 N", check: (a) => a.includes("2.4") && a.includes("0.3") },
+  { id: "b04", typ: "nur-binaer", frage: "Wie lautet die Zertifikatsregister-Nummer der ISO-9001-Zertifizierung und bis wann gilt sie?", erwartung: "20-QMS-4417, bis 31.08.2028", check: (a) => a.includes("20-qms-4417") && a.includes("2028") },
+  { id: "b05", typ: "nur-binaer", frage: "Welche Toleranz hat der Drahtdurchmesser der Druckfeder DF-12040-DH laut Zeichnung?", erwartung: "1,25 mm ± 0,02 mm", check: (a) => a.includes("1.25") && a.includes("0.02") },
+  { id: "b06", typ: "nur-binaer", frage: "Ist die Betriebsvereinbarung zur BDE unterschrieben?", erwartung: "Nein, Entwurf ohne Unterschriften", check: (a) => /\bnein\b|nicht unterschrieben|entwurf|unterschriftsfelder (sind )?leer|keine unterschrift/.test(a) },
+  { id: "b07", typ: "nur-binaer", frage: "Warum fehlt die Seriennummer der Maschine INV-1214?", erwartung: "Typenschild überstrichen, nie ermittelt", check: (a) => /typenschild/.test(a) && /überstrichen|übermalt|überlackiert|nicht (mehr )?lesbar/.test(a) },
+  { id: "b08", typ: "nur-binaer", frage: "Welchen Basispreis je Tonne nennt der Rahmenliefervertrag mit der Rehwinkel GmbH?", erwartung: "1.480,00 EUR/t", check: (a) => /\b1480\b/.test(a) },
 ];
