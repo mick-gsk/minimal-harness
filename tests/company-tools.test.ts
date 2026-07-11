@@ -12,6 +12,7 @@ import {
   makeFsReadTool,
   makeFsSearchTool,
 } from "../bench/company/tools.js";
+import { validateToolInput } from "../src/tools/schema.js";
 
 const root = mkdtempSync(join(tmpdir(), "company-tools-"));
 mkdirSync(join(root, "fileserver"));
@@ -178,6 +179,29 @@ describe("data.query erp: table source", () => {
     await expect(run({ file: "erp:gibtesnicht" })).rejects.toThrow(
       /unknown ERP table "gibtesnicht".*available tables:.*auftraege.*rechnungen/s,
     );
+  });
+
+  // Flattened input schema: the tool args ARE the query object. Regression guard
+  // for the live-measured bug where an 8B model copies a bare example from the
+  // description ({"file":…}) and the old {query:{…}} wrapper schema rejected it.
+  it("accepts the bare {file:...} args through the validator and executes", async () => {
+    const tool = makeDataQueryTool(erpRoot);
+    const args = { file: "erp:auftraege", aggregate: [{ fn: "count" }] };
+    expect(validateToolInput(args, tool.inputSchema)).toBeNull();
+    const out = ((await tool.execute(args as never)) as { result: string }).result;
+    expect(aggregateScalar(out)).toBe(2);
+  });
+
+  it("still tolerates the legacy {query:{...}} wrapper at the handler", async () => {
+    const tool = makeDataQueryTool(erpRoot);
+    const out = ((await tool.execute({ query: { file: "erp:auftraege", aggregate: [{ fn: "count" }] } } as never)) as {
+      result: string;
+    }).result;
+    expect(aggregateScalar(out)).toBe(2);
+  });
+
+  it("the validator flags a request that omits file", () => {
+    expect(validateToolInput({ aggregate: [{ fn: "count" }] }, makeDataQueryTool(erpRoot).inputSchema)).toMatch(/file/);
   });
 });
 

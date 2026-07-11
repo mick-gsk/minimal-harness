@@ -231,7 +231,9 @@ export function makeErpQueryTool(dbPath: string): ToolDefinition<{ sql: string }
  * a small JSON shape that 8B models emit reliably. The `anti` join is the point:
  * it answers "missing in" / "orphaned" questions.
  */
-export function makeDataQueryTool(root: string): ToolDefinition<{ query: TableQuery }, { result: string }> {
+export function makeDataQueryTool(
+  root: string,
+): ToolDefinition<TableQuery & { query?: TableQuery }, { result: string }> {
   // Same wiring makeCompanyTools uses for erp.query — the erp: source is just
   // the other view onto that one database.
   const erpDbPath = join(root, "erp", "erp.sqlite");
@@ -310,22 +312,39 @@ export function makeDataQueryTool(root: string): ToolDefinition<{ query: TableQu
       '{"file":"dms/docuware-index.csv","join":{"file":"erp:auftraege","leftCol":"Aktenzeichen","rightCol":"auftragsnr","type":"anti"},"aggregate":[{"fn":"count"}]}. ' +
       '(5) how many ERP invoices are dated in 2025 (year filter on an ERP table): ' +
       '{"file":"erp:rechnungen","where":[{"col":"rechnungsdatum","op":"contains","value":"2025"}],"aggregate":[{"fn":"count"}]}.',
+    // Flattened: the tool's arguments ARE the query object. Earlier the schema
+    // required a {query:{…}} wrapper while every description example showed the
+    // bare object — 8B models copy the examples verbatim, so the wrapper form
+    // got rejected en masse. The handler still tolerates a {query} wrapper for
+    // back-compat, but the schema now accepts (and the examples show) the bare
+    // shape the models actually emit.
     inputSchema: {
       type: "object",
       properties: {
-        query: {
-          type: "object",
+        file: {
+          type: "string",
           description:
-            'The query object, e.g. {"file":"dms/docuware-index.csv","groupBy":["Dokumenttyp"]}. "file" is required: a corpus-relative .csv path or an "erp:<table>" reference (e.g. "erp:auftraege").',
+            'The source: a corpus-relative .csv path, an "erp:<table>" reference (e.g. "erp:auftraege"), or an "fs:<folder>" file listing (e.g. "fs:fileserver").',
         },
+        select: { type: "array", description: "Column names to project, e.g. [\"Artikelnr\",\"Listenpreis EUR\"]." },
+        where: { type: "array", description: "Filters, e.g. [{\"col\":\"Status\",\"op\":\"==\",\"value\":\"Offen\"}]." },
+        groupBy: { type: "array", description: "Columns to group by, e.g. [\"Werkstoff\"]." },
+        aggregate: { type: "array", description: "Aggregations, e.g. [{\"fn\":\"count\"}] or [{\"fn\":\"sum\",\"col\":\"Menge\"}]." },
+        join: { type: "object", description: "{file,leftCol,rightCol,type} — type ∈ inner,anti." },
+        limit: { type: "number", description: "Maximum rows to return." },
       },
-      required: ["query"],
+      required: ["file"],
       additionalProperties: false,
     },
     async execute(input) {
-      const q = input.query;
-      if (!q || typeof q !== "object" || typeof q.file !== "string") {
-        throw new Error('query must be an object with a "file" (corpus-relative .csv path or "erp:<table>")');
+      // Accept both the flat form ({file,…}) and the legacy wrapper ({query:{…}}).
+      const wrapped = input.query;
+      const q: TableQuery =
+        wrapped && typeof wrapped === "object" && !Array.isArray(wrapped)
+          ? wrapped
+          : (input as TableQuery);
+      if (!q || typeof q.file !== "string") {
+        throw new Error('query needs a "file" (corpus-relative .csv path or "erp:<table>")');
       }
       return { result: formatQueryResult(runQuery(q, load)) };
     },
