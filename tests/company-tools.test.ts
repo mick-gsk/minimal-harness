@@ -1,7 +1,7 @@
 import { describe, it, expect, afterAll } from "@jest/globals";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import {
@@ -205,6 +205,68 @@ describe("data.query erp: table source", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// data.query with the `fs:` file-listing source — index↔filesystem joins.
+// ---------------------------------------------------------------------------
+
+describe("data.query fs: file-listing source", () => {
+  const fsRoot = mkdtempSync(join(tmpdir(), "data-query-fs-"));
+  // A nested fileserver tree (the K: drive) + a DMS index whose Ablagepfad
+  // column stores K:\ paths with backslashes, like the real DocuWare export.
+  mkdirSync(join(fsRoot, "fileserver", "Vertrieb", "Angebote"), { recursive: true });
+  mkdirSync(join(fsRoot, "dms"), { recursive: true });
+  writeFileSync(join(fsRoot, "fileserver", "liste.txt"), "x");
+  writeFileSync(join(fsRoot, "fileserver", "Vertrieb", "a.txt"), "x");
+  writeFileSync(join(fsRoot, "fileserver", "Vertrieb", "Angebote", "b.pdf"), "x");
+  // DW-3 points at a file that does not exist on disk — the orphan.
+  writeFileSync(
+    join(fsRoot, "dms", "docuware-index.csv"),
+    "Dokument-ID;Ablagepfad\n" +
+      "DW-1;K:\\Vertrieb\\a.txt\n" +
+      "DW-2;K:\\Vertrieb\\Angebote\\b.pdf\n" +
+      "DW-3;K:\\Vertrieb\\weg.txt\n",
+    "utf8",
+  );
+
+  afterAll(() => rmSync(fsRoot, { recursive: true, force: true }));
+
+  const run = async (query: unknown): Promise<string> =>
+    ((await makeDataQueryTool(fsRoot).execute(query as never)) as { result: string }).result;
+
+  it("lists files recursively with normalized (forward-slash) columns", async () => {
+    const out = await run({ file: "fs:fileserver", select: ["pfad", "pfad_win", "ordner", "dateiname", "endung"] });
+    // deepest file proves recursion; row proves every column's normalization.
+    expect(out).toContain(
+      "fileserver/Vertrieb/Angebote/b.pdf | K:\\Vertrieb\\Angebote\\b.pdf | fileserver/Vertrieb/Angebote | b.pdf | pdf",
+    );
+    expect(out).toContain("3 rows");
+  });
+
+  it("counts all files with the bare aggregate form", async () => {
+    expect(aggregateScalar(await run({ file: "fs:fileserver", aggregate: [{ fn: "count" }] }))).toBe(3);
+  });
+
+  it("fs: (no folder) spans the whole corpus, dms CSV included", async () => {
+    const out = await run({ file: "fs:", where: [{ col: "ordner", op: "==", value: "dms" }], select: ["dateiname"] });
+    expect(out).toContain("docuware-index.csv");
+  });
+
+  it("anti-joins a DMS index against the filesystem (orphaned stored paths)", async () => {
+    const out = await run({
+      file: "dms/docuware-index.csv",
+      join: { file: "fs:fileserver", leftCol: "Ablagepfad", rightCol: "pfad_win", type: "anti" },
+      aggregate: [{ fn: "count" }],
+    });
+    expect(aggregateScalar(out)).toBe(1); // only DW-3 (weg.txt)
+  });
+
+  it("rejects an unknown fs folder with the list of available folders", async () => {
+    await expect(run({ file: "fs:gibtesnicht" })).rejects.toThrow(
+      /unknown fs folder "gibtesnicht".*available folders:.*fileserver/s,
+    );
+  });
+});
+
 // Integration against the generated demo-company corpus — skipped when absent
 // (company/ is a local artifact, not in git). The expected numbers are derived
 // straight from the source data here (sqlite + CSV), never from truth/, so the
@@ -259,5 +321,48 @@ maybe("data.query erp: source on the demo-company corpus", () => {
       aggregate: [{ fn: "count" }],
     });
     expect(aggregateScalar(out)).toBe(invoices2025);
+  });
+});
+
+maybe("data.query fs: source on the demo-company corpus", () => {
+  const tool = makeDataQueryTool(CORPUS);
+  const run = async (query: unknown): Promise<string> =>
+    ((await tool.execute(query as never)) as { result: string }).result;
+
+  // Direct, tool-independent inventory via a readdir walk of the real files.
+  const fsRoot = join(CORPUS, "fileserver");
+  const walk = (dir: string, out: string[]): void => {
+    for (const name of readdirSync(dir).sort()) {
+      const abs = join(dir, name);
+      if (statSync(abs).isDirectory()) walk(abs, out);
+      else out.push(abs);
+    }
+  };
+  const fsFiles: string[] = [];
+  walk(fsRoot, fsFiles);
+  // Reproduce the tool's K:\ mapping independently to derive the orphan count.
+  const winPaths = new Set(
+    fsFiles.map((abs) => "K:\\" + abs.slice(fsRoot.length + 1).split(sep).join("\\")),
+  );
+  const docuLines = decodeSmart(readFileSync(join(CORPUS, "dms", "docuware-index.csv")))
+    .replace(/\r/g, "")
+    .split("\n")
+    .filter((l) => l.trim().length > 0);
+  const pfadIdx = docuLines[0]!.split(";").indexOf("Ablagepfad");
+  const ablagePaths = docuLines.slice(1).map((l) => (l.split(";")[pfadIdx] ?? "").trim());
+  const expectedOrphans = ablagePaths.filter((p) => !winPaths.has(p)).length;
+
+  it("counts fileserver files consistently with a direct readdir walk", async () => {
+    const out = await run({ file: "fs:fileserver", aggregate: [{ fn: "count" }] });
+    expect(aggregateScalar(out)).toBe(fsFiles.length);
+  });
+
+  it("anti-joins DocuWare Ablagepfad against fs:fileserver consistently with a direct count", async () => {
+    const out = await run({
+      file: "dms/docuware-index.csv",
+      join: { file: "fs:fileserver", leftCol: "Ablagepfad", rightCol: "pfad_win", type: "anti" },
+      aggregate: [{ fn: "count" }],
+    });
+    expect(aggregateScalar(out)).toBe(expectedOrphans);
   });
 });

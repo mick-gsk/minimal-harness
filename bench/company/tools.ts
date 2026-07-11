@@ -47,6 +47,24 @@ export const ERP_TABLES = [
 /** `data.query` file prefix that resolves to an ERP table instead of a CSV. */
 const ERP_TABLE_PREFIX = "erp:";
 
+/**
+ * `data.query` file prefix that resolves to a file *listing* instead of a CSV:
+ * `fs:<folder>` yields one row per file (recursive), `fs:` the whole corpus.
+ * The point is index-vs-filesystem joins — a DMS index (dms/docuware-index.csv)
+ * carries stored paths (`Ablagepfad`, e.g. `K:\Vertrieb\…`), and the only way to
+ * ask "which of those point at a file that no longer exists?" is to have the
+ * actual file inventory as a joinable table.
+ */
+const FS_LIST_PREFIX = "fs:";
+
+/**
+ * The fileserver corpus folder is the company's `K:` drive; the DocuWare index
+ * stores paths as `K:\…` with backslashes. `fs:` rows therefore carry a second
+ * `pfad_win` column in exactly that shape so an index↔filesystem join matches.
+ */
+const FILESERVER_FOLDER = "fileserver";
+const FILESERVER_DRIVE = "K:";
+
 /** Resolves a corpus-relative path and refuses anything escaping the root. */
 function resolveInside(root: string, relPath: string): string {
   const abs = resolve(root, relPath);
@@ -268,17 +286,62 @@ export function makeDataQueryTool(
     }
   };
 
+  /**
+   * Lists the files under a corpus folder as a queryable table (one row per
+   * file, recursive). `fs:` = whole corpus, `fs:fileserver` = the K: drive.
+   * Columns: pfad (corpus-relative, forward slashes), pfad_win (K:\… backslash
+   * form, so it joins the DocuWare Ablagepfad column), ordner, dateiname, endung.
+   * resolveInside keeps this inside the corpus — company/out/truth stays out of
+   * reach, same guarantee as every other source here.
+   */
+  const loadFsTable = (ref: string): Table => {
+    const sub = ref.slice(FS_LIST_PREFIX.length).trim(); // "" = whole corpus
+    const base = resolveInside(root, sub === "" ? "." : sub);
+    if (!existsSync(base) || !statSync(base).isDirectory()) {
+      const folders = readdirSync(root)
+        .filter((n) => statSync(join(root, n)).isDirectory())
+        .sort();
+      throw new Error(`unknown fs folder "${sub}" — available folders: ${folders.join(", ")}`);
+    }
+    const rels: string[] = [];
+    walkFiles(root, base, rels); // corpus-relative paths, OS separators
+    const rows: Row[] = rels.map((rel) => {
+      const pfad = rel.split(sep).join("/");
+      const cut = pfad.lastIndexOf("/");
+      const ordner = cut === -1 ? "" : pfad.slice(0, cut);
+      const dateiname = cut === -1 ? pfad : pfad.slice(cut + 1);
+      const dot = dateiname.lastIndexOf(".");
+      const endung = dot <= 0 ? "" : dateiname.slice(dot + 1).toLowerCase();
+      // fileserver/… is the K: drive; everything else keeps its corpus path,
+      // only switched to backslashes (no drive letter to invent for it).
+      const pfad_win = pfad.startsWith(`${FILESERVER_FOLDER}/`)
+        ? `${FILESERVER_DRIVE}\\${pfad.slice(FILESERVER_FOLDER.length + 1).replace(/\//g, "\\")}`
+        : pfad.replace(/\//g, "\\");
+      return { pfad, pfad_win, ordner, dateiname, endung };
+    });
+    return { columns: ["pfad", "pfad_win", "ordner", "dateiname", "endung"], rows };
+  };
+
   // Parse each source at most once per tool call; join queries touch two.
   const cache = new Map<string, Table>();
   const load = (file: string): Table => {
     if (typeof file !== "string" || file.length === 0) {
-      throw new Error('query.file must be a corpus-relative .csv path or an "erp:<table>" reference');
+      throw new Error('query.file must be a corpus-relative .csv path, an "erp:<table>" or an "fs:<folder>" reference');
     }
-    // `erp:<table>` pulls a live ERP table; anything else is a corpus CSV.
+    // `erp:<table>` pulls a live ERP table; `fs:<folder>` a file listing;
+    // anything else is a corpus CSV.
     if (file.startsWith(ERP_TABLE_PREFIX)) {
       let table = cache.get(file);
       if (!table) {
         table = loadErpTable(file);
+        cache.set(file, table);
+      }
+      return table;
+    }
+    if (file.startsWith(FS_LIST_PREFIX)) {
+      let table = cache.get(file);
+      if (!table) {
+        table = loadFsTable(file);
         cache.set(file, table);
       }
       return table;
@@ -299,6 +362,9 @@ export function makeDataQueryTool(
       "Use this instead of fs.read for counting, filtering, grouping and JOINING rows across CSVs — small models cannot do this by reading. " +
       "Besides CSV paths, both `file` and `join.file` also accept a live ERP table via the prefix 'erp:' + table name " +
       `(${ERP_TABLES.map((t) => `erp:${t}`).join(", ")}) — so you can join a CSV against an ERP table for cross-system questions. ` +
+      "They also accept a file listing via 'fs:' + a corpus folder ('fs:fileserver' = the K: drive, 'fs:' = the whole corpus): " +
+      "one row per file with columns pfad (corpus-relative), pfad_win (K:\\… backslash form, matches DocuWare's Ablagepfad), ordner, dateiname, endung. " +
+      "Use fs: to answer index-vs-filesystem questions ('which stored path no longer exists on disk?'). " +
       "Discover an ERP table's columns with erp.query: SELECT name FROM pragma_table_info('auftraege'). " +
       "Query shape (JSON): {file, select?, where?:[{col,op,value}], groupBy?, aggregate?:[{fn,col?}], join?:{file,leftCol,rightCol,type}, limit?}. " +
       "op ∈ ==,!=,>,<,>=,<=,contains,in (numbers understand German decimal commas). fn ∈ count,sum,avg,min,max. join.type ∈ inner,anti. " +
@@ -311,7 +377,10 @@ export function makeDataQueryTool(
       '(4) DocuWare entries pointing at an order that no longer exists in the ERP (CSV↔ERP anti-join): ' +
       '{"file":"dms/docuware-index.csv","join":{"file":"erp:auftraege","leftCol":"Aktenzeichen","rightCol":"auftragsnr","type":"anti"},"aggregate":[{"fn":"count"}]}. ' +
       '(5) how many ERP invoices are dated in 2025 (year filter on an ERP table): ' +
-      '{"file":"erp:rechnungen","where":[{"col":"rechnungsdatum","op":"contains","value":"2025"}],"aggregate":[{"fn":"count"}]}.',
+      '{"file":"erp:rechnungen","where":[{"col":"rechnungsdatum","op":"contains","value":"2025"}],"aggregate":[{"fn":"count"}]}. ' +
+      '(6) DocuWare index entries whose stored path points at a file that no longer exists (CSV↔filesystem anti-join): ' +
+      '{"file":"dms/docuware-index.csv","join":{"file":"fs:fileserver","leftCol":"Ablagepfad","rightCol":"pfad_win","type":"anti"},"aggregate":[{"fn":"count"}]}. ' +
+      '(7) how many files are on the fileserver: {"file":"fs:fileserver","aggregate":[{"fn":"count"}]}.',
     // Flattened: the tool's arguments ARE the query object. Earlier the schema
     // required a {query:{…}} wrapper while every description example showed the
     // bare object — 8B models copy the examples verbatim, so the wrapper form
@@ -344,7 +413,7 @@ export function makeDataQueryTool(
           ? wrapped
           : (input as TableQuery);
       if (!q || typeof q.file !== "string") {
-        throw new Error('query needs a "file" (corpus-relative .csv path or "erp:<table>")');
+        throw new Error('query needs a "file" (corpus-relative .csv path, "erp:<table>" or "fs:<folder>")');
       }
       return { result: formatQueryResult(runQuery(q, load)) };
     },
