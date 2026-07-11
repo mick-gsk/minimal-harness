@@ -11,6 +11,7 @@ import {
   formatQueryResult,
   parseCsv,
   runQuery,
+  type Row,
   type Table,
   type TableQuery,
 } from "../../src/tools/table-query.js";
@@ -24,6 +25,27 @@ import type { ToolDefinition } from "../../src/types/tool.js";
  */
 const MAX_READ_CHARS = 6_000;
 const MAX_SQL_ROWS = 50;
+
+/**
+ * The ERP tables the read-only tools may touch. Single source of truth for both
+ * erp.query (raw SQL) and data.query's `erp:` table source, so the two tools can
+ * never drift on what "the ERP" exposes.
+ */
+export const ERP_TABLES = [
+  "kunden",
+  "lieferanten",
+  "artikel",
+  "auftraege",
+  "rechnungen",
+  "lieferscheine",
+  "werkzeuge",
+  "maschinen",
+  "wartung",
+  "mitarbeiter",
+] as const;
+
+/** `data.query` file prefix that resolves to an ERP table instead of a CSV. */
+const ERP_TABLE_PREFIX = "erp:";
 
 /** Resolves a corpus-relative path and refuses anything escaping the root. */
 function resolveInside(root: string, relPath: string): string {
@@ -179,7 +201,7 @@ export function makeErpQueryTool(dbPath: string): ToolDefinition<{ sql: string }
   return {
     name: "erp.query",
     description:
-      "Runs a read-only SQL SELECT against the live ERP database (SQLite). Tables: kunden, lieferanten, artikel, auftraege, rechnungen, lieferscheine, werkzeuge, maschinen, wartung, mitarbeiter. Discover columns via: SELECT name FROM pragma_table_info('artikel').",
+      `Runs a read-only SQL SELECT against the live ERP database (SQLite). Tables: ${ERP_TABLES.join(", ")}. Discover columns via: SELECT name FROM pragma_table_info('artikel').`,
     inputSchema: {
       type: "object",
       properties: { sql: { type: "string", description: "A single SELECT statement." } },
@@ -210,10 +232,55 @@ export function makeErpQueryTool(dbPath: string): ToolDefinition<{ sql: string }
  * it answers "missing in" / "orphaned" questions.
  */
 export function makeDataQueryTool(root: string): ToolDefinition<{ query: TableQuery }, { result: string }> {
-  // Parse each CSV at most once per tool call; join queries touch two files.
+  // Same wiring makeCompanyTools uses for erp.query — the erp: source is just
+  // the other view onto that one database.
+  const erpDbPath = join(root, "erp", "erp.sqlite");
+
+  /**
+   * Reads a whitelisted ERP table into the SAME string-cell Table shape parseCsv
+   * produces, so the engine (join/where/aggregate) treats sqlite and CSV sources
+   * identically. Cell values become strings via String(): the engine parses them
+   * on demand with parseGermanNumber, which reads both "1.29" (sqlite REAL) and
+   * "1,29" (German CSV), so a numeric compare behaves the same on either source.
+   */
+  const loadErpTable = (ref: string): Table => {
+    const name = ref.slice(ERP_TABLE_PREFIX.length).trim();
+    if (!(ERP_TABLES as readonly string[]).includes(name)) {
+      throw new Error(`unknown ERP table "${name}" — available tables: ${ERP_TABLES.join(", ")}`);
+    }
+    const db = new DatabaseSync(erpDbPath, { readOnly: true });
+    try {
+      // pragma_table_info gives the columns even for an empty table.
+      const columns = db
+        .prepare("SELECT name FROM pragma_table_info(?)")
+        .all(name)
+        .map((r) => String((r as { name: unknown }).name));
+      const rows = (db.prepare(`SELECT * FROM ${name}`).all() as Record<string, unknown>[]).map((r) => {
+        const out: Row = {};
+        for (const c of columns) out[c] = r[c] == null ? "" : String(r[c]);
+        return out;
+      });
+      return { columns, rows };
+    } finally {
+      db.close();
+    }
+  };
+
+  // Parse each source at most once per tool call; join queries touch two.
   const cache = new Map<string, Table>();
   const load = (file: string): Table => {
-    if (typeof file !== "string" || file.length === 0) throw new Error("query.file must be a corpus-relative .csv path");
+    if (typeof file !== "string" || file.length === 0) {
+      throw new Error('query.file must be a corpus-relative .csv path or an "erp:<table>" reference');
+    }
+    // `erp:<table>` pulls a live ERP table; anything else is a corpus CSV.
+    if (file.startsWith(ERP_TABLE_PREFIX)) {
+      let table = cache.get(file);
+      if (!table) {
+        table = loadErpTable(file);
+        cache.set(file, table);
+      }
+      return table;
+    }
     const abs = resolveInside(root, file); // refuses paths escaping the corpus (truth/ is outside it)
     if (!/\.csv$/i.test(abs)) throw new Error(`only .csv files can be queried: ${file}`);
     let table = cache.get(abs);
@@ -228,6 +295,9 @@ export function makeDataQueryTool(root: string): ToolDefinition<{ query: TableQu
     description:
       "Runs a structured query over a CSV export in the corpus (dms/, erp/, ad/, bde/, datev/, pdm/). " +
       "Use this instead of fs.read for counting, filtering, grouping and JOINING rows across CSVs — small models cannot do this by reading. " +
+      "Besides CSV paths, both `file` and `join.file` also accept a live ERP table via the prefix 'erp:' + table name " +
+      `(${ERP_TABLES.map((t) => `erp:${t}`).join(", ")}) — so you can join a CSV against an ERP table for cross-system questions. ` +
+      "Discover an ERP table's columns with erp.query: SELECT name FROM pragma_table_info('auftraege'). " +
       "Query shape (JSON): {file, select?, where?:[{col,op,value}], groupBy?, aggregate?:[{fn,col?}], join?:{file,leftCol,rightCol,type}, limit?}. " +
       "op ∈ ==,!=,>,<,>=,<=,contains,in (numbers understand German decimal commas). fn ∈ count,sum,avg,min,max. join.type ∈ inner,anti. " +
       "The 'anti' join returns left rows with NO match on the right — use it for 'orphaned' / 'points at something that does not exist' questions. " +
@@ -235,14 +305,18 @@ export function makeDataQueryTool(root: string): ToolDefinition<{ query: TableQu
       '(1) count articles per material: {"file":"erp/export_2019.csv","groupBy":["Werkstoff"]}. ' +
       '(2) articles above 5 EUR: {"file":"erp/export_2019.csv","where":[{"col":"Listenpreis EUR","op":">","value":5}],"select":["Artikelnr","Listenpreis EUR"]}. ' +
       '(3) DocuWare entries whose creator no longer exists in Active Directory (anti-join): ' +
-      '{"file":"dms/docuware-index.csv","join":{"file":"ad/users.csv","leftCol":"Erfasst durch","rightCol":"SamAccountName","type":"anti"},"aggregate":[{"fn":"count"}]}.',
+      '{"file":"dms/docuware-index.csv","join":{"file":"ad/users.csv","leftCol":"Erfasst durch","rightCol":"SamAccountName","type":"anti"},"aggregate":[{"fn":"count"}]}. ' +
+      '(4) DocuWare entries pointing at an order that no longer exists in the ERP (CSV↔ERP anti-join): ' +
+      '{"file":"dms/docuware-index.csv","join":{"file":"erp:auftraege","leftCol":"Aktenzeichen","rightCol":"auftragsnr","type":"anti"},"aggregate":[{"fn":"count"}]}. ' +
+      '(5) how many ERP invoices are dated in 2025 (year filter on an ERP table): ' +
+      '{"file":"erp:rechnungen","where":[{"col":"rechnungsdatum","op":"contains","value":"2025"}],"aggregate":[{"fn":"count"}]}.',
     inputSchema: {
       type: "object",
       properties: {
         query: {
           type: "object",
           description:
-            'The query object, e.g. {"file":"dms/docuware-index.csv","groupBy":["Dokumenttyp"]}. "file" is required and must be a corpus-relative .csv path.',
+            'The query object, e.g. {"file":"dms/docuware-index.csv","groupBy":["Dokumenttyp"]}. "file" is required: a corpus-relative .csv path or an "erp:<table>" reference (e.g. "erp:auftraege").',
         },
       },
       required: ["query"],
@@ -251,7 +325,7 @@ export function makeDataQueryTool(root: string): ToolDefinition<{ query: TableQu
     async execute(input) {
       const q = input.query;
       if (!q || typeof q !== "object" || typeof q.file !== "string") {
-        throw new Error('query must be an object with a "file" (corpus-relative .csv path)');
+        throw new Error('query must be an object with a "file" (corpus-relative .csv path or "erp:<table>")');
       }
       return { result: formatQueryResult(runQuery(q, load)) };
     },

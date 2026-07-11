@@ -1,9 +1,17 @@
 import { describe, it, expect, afterAll } from "@jest/globals";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
-import { decodeSmart, makeErpQueryTool, makeFsListTool, makeFsReadTool, makeFsSearchTool } from "../bench/company/tools.js";
+import {
+  decodeSmart,
+  makeDataQueryTool,
+  makeErpQueryTool,
+  makeFsListTool,
+  makeFsReadTool,
+  makeFsSearchTool,
+} from "../bench/company/tools.js";
 
 const root = mkdtempSync(join(tmpdir(), "company-tools-"));
 mkdirSync(join(root, "fileserver"));
@@ -85,5 +93,147 @@ describe("company tools", () => {
   it("decodeSmart falls back to windows-1252 only when utf-8 breaks", () => {
     expect(decodeSmart(Buffer.from("schön utf-8", "utf8"))).toBe("schön utf-8");
     expect(decodeSmart(Buffer.from([0xe4]))).toBe("ä");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// data.query with the `erp:` table source — the CSV↔ERP bridge.
+// ---------------------------------------------------------------------------
+
+/** Extracts the single scalar of a whole-table aggregate ("count\n---\n<n>\n…"). */
+function aggregateScalar(rendered: string): number {
+  const m = rendered.match(/\n---\n([\d.]+)\n/);
+  if (!m) throw new Error(`no scalar in result:\n${rendered}`);
+  return Number(m[1]);
+}
+
+describe("data.query erp: table source", () => {
+  const erpRoot = mkdtempSync(join(tmpdir(), "data-query-erp-"));
+  // makeDataQueryTool derives the DB from <root>/erp/erp.sqlite — mirror that.
+  mkdirSync(join(erpRoot, "erp"));
+  mkdirSync(join(erpRoot, "dms"));
+  {
+    const db = new DatabaseSync(join(erpRoot, "erp", "erp.sqlite"));
+    db.exec("CREATE TABLE auftraege (auftragsnr TEXT, kunde TEXT, stueckpreis REAL)");
+    const ins = db.prepare("INSERT INTO auftraege VALUES (?, ?, ?)");
+    ins.run("2024-1001", "Sundern", 1.29);
+    ins.run("2024-1002", "Kirchbaum", 7.73);
+    db.exec("CREATE TABLE rechnungen (rechnungsnr TEXT, rechnungsdatum TEXT)");
+    const insR = db.prepare("INSERT INTO rechnungen VALUES (?, ?)");
+    insR.run("RE-2024-1", "2024-06-30");
+    insR.run("RE-2025-1", "2025-07-13");
+    insR.run("RE-2025-2", "2025-01-28");
+    db.close();
+  }
+  // A DocuWare-shaped CSV: DW-3 points at an order the ERP does not have.
+  writeFileSync(
+    join(erpRoot, "dms", "docuware-index.csv"),
+    "Dokument-ID;Aktenzeichen\nDW-1;2024-1001\nDW-2;2024-1002\nDW-3;9999-0000\nDW-4;2024-1001\n",
+    "utf8",
+  );
+
+  afterAll(() => rmSync(erpRoot, { recursive: true, force: true }));
+
+  const run = async (query: unknown): Promise<string> =>
+    ((await makeDataQueryTool(erpRoot).execute({ query } as never)) as { result: string }).result;
+
+  it("loads an erp: table as a queryable source", async () => {
+    const out = await run({ file: "erp:auftraege", select: ["auftragsnr", "kunde"] });
+    expect(out).toContain("2024-1001");
+    expect(out).toContain("Sundern");
+    expect(out).toContain("2 rows");
+  });
+
+  it("treats sqlite REAL cells like CSV decimals for numeric where filters", async () => {
+    // 1.29 and 7.73 come out of sqlite as numbers; the engine must still
+    // compare them numerically after stringify (parseGermanNumber path).
+    const out = await run({ file: "erp:auftraege", where: [{ col: "stueckpreis", op: ">", value: 1.3 }], aggregate: [{ fn: "count" }] });
+    expect(aggregateScalar(out)).toBe(1);
+  });
+
+  it("anti-joins a CSV against an erp: table (orphaned references)", async () => {
+    const out = await run({
+      file: "dms/docuware-index.csv",
+      join: { file: "erp:auftraege", leftCol: "Aktenzeichen", rightCol: "auftragsnr", type: "anti" },
+      aggregate: [{ fn: "count" }],
+    });
+    expect(aggregateScalar(out)).toBe(1); // only DW-3 (9999-0000)
+  });
+
+  it("inner-joins a CSV against an erp: table", async () => {
+    const out = await run({
+      file: "dms/docuware-index.csv",
+      join: { file: "erp:auftraege", leftCol: "Aktenzeichen", rightCol: "auftragsnr", type: "inner" },
+      aggregate: [{ fn: "count" }],
+    });
+    expect(aggregateScalar(out)).toBe(3); // DW-1, DW-2, DW-4
+  });
+
+  it("filters an erp: table by year via contains", async () => {
+    const out = await run({ file: "erp:rechnungen", where: [{ col: "rechnungsdatum", op: "contains", value: "2025" }], aggregate: [{ fn: "count" }] });
+    expect(aggregateScalar(out)).toBe(2);
+  });
+
+  it("rejects an unknown erp: table with the list of allowed tables", async () => {
+    await expect(run({ file: "erp:gibtesnicht" })).rejects.toThrow(
+      /unknown ERP table "gibtesnicht".*available tables:.*auftraege.*rechnungen/s,
+    );
+  });
+});
+
+// Integration against the generated demo-company corpus — skipped when absent
+// (company/ is a local artifact, not in git). The expected numbers are derived
+// straight from the source data here (sqlite + CSV), never from truth/, so the
+// test checks Engine-vs-direct-count consistency, not the answer key.
+const CORPUS = join(dirname(fileURLToPath(import.meta.url)), "..", "company", "out", "corpus");
+const maybe = existsSync(join(CORPUS, "erp", "erp.sqlite")) ? describe : describe.skip;
+
+maybe("data.query erp: source on the demo-company corpus", () => {
+  const tool = makeDataQueryTool(CORPUS);
+  const run = async (query: unknown): Promise<string> =>
+    ((await tool.execute({ query } as never)) as { result: string }).result;
+
+  // Direct, tool-independent ground truth from the raw sources.
+  const db = new DatabaseSync(join(CORPUS, "erp", "erp.sqlite"), { readOnly: true });
+  const auftragsnrs = new Set(
+    (db.prepare("SELECT auftragsnr FROM auftraege").all() as { auftragsnr: unknown }[]).map((r) => String(r.auftragsnr)),
+  );
+  const invoices2025 = (db.prepare("SELECT COUNT(*) c FROM rechnungen WHERE rechnungsdatum LIKE '2025%'").get() as { c: number }).c;
+  db.close();
+
+  const docuLines = decodeSmart(readFileSync(join(CORPUS, "dms", "docuware-index.csv")))
+    .replace(/\r/g, "")
+    .split("\n")
+    .filter((l) => l.trim().length > 0);
+  const aktIdx = docuLines[0]!.split(";").indexOf("Aktenzeichen");
+  const aktValues = docuLines.slice(1).map((l) => (l.split(";")[aktIdx] ?? "").trim());
+  const expectedMatches = aktValues.filter((a) => auftragsnrs.has(a)).length;
+  const expectedOrphans = aktValues.filter((a) => !auftragsnrs.has(a)).length;
+
+  it("inner-joins DocuWare Aktenzeichen against erp:auftraege consistently with a direct count", async () => {
+    const out = await run({
+      file: "dms/docuware-index.csv",
+      join: { file: "erp:auftraege", leftCol: "Aktenzeichen", rightCol: "auftragsnr", type: "inner" },
+      aggregate: [{ fn: "count" }],
+    });
+    expect(aggregateScalar(out)).toBe(expectedMatches);
+  });
+
+  it("anti-joins DocuWare Aktenzeichen against erp:auftraege consistently with a direct count", async () => {
+    const out = await run({
+      file: "dms/docuware-index.csv",
+      join: { file: "erp:auftraege", leftCol: "Aktenzeichen", rightCol: "auftragsnr", type: "anti" },
+      aggregate: [{ fn: "count" }],
+    });
+    expect(aggregateScalar(out)).toBe(expectedOrphans);
+  });
+
+  it("counts 2025 invoices in erp:rechnungen consistently with a direct SQL count", async () => {
+    const out = await run({
+      file: "erp:rechnungen",
+      where: [{ col: "rechnungsdatum", op: "contains", value: "2025" }],
+      aggregate: [{ fn: "count" }],
+    });
+    expect(aggregateScalar(out)).toBe(invoices2025);
   });
 });
