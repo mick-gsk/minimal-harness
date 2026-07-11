@@ -13,7 +13,7 @@
  */
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, existsSync } from "node:fs";
 import type { ChatMessage } from "../../src/index.js";
 import { DefaultAgentLoop } from "../../src/core/agent-loop.js";
 import { DefaultPromptBuilder } from "../../src/core/prompt-builder.js";
@@ -23,7 +23,9 @@ import { DefaultToolBridge } from "../../src/tools/tool-bridge.js";
 import { OllamaClient } from "../../src/llm/ollama-client.js";
 import { runSidecar, smolagentsAvailable } from "../harnesses/smolagents.js";
 import { startWorldBridge } from "../bridge/world-http-bridge.js";
-import { makeCompanyTools } from "./tools.js";
+import { makeCompanyTools, makeCompanyKnowledgeTool } from "./tools.js";
+import { OllamaEmbedder } from "../../src/rag/embedder.js";
+import { KNOWLEDGE_DB } from "./build-knowledge.js";
 import { BINARY_FACTS, FACTS, SYSTEM_FACTS, normalize, type CompanyFact } from "./facts.js";
 
 const BASE_URL = process.env.OLLAMA_BASE_URL ?? "http://localhost:11434";
@@ -44,6 +46,10 @@ const MAX_TURNS = 12;
 // "minimal@nt" = the harness in nativeToolCalling mode (same loop/memory/policy,
 // tool specs via API — the right config for models trained on function calling,
 // e.g. llama);
+// "minimal@rag" = the text-protocol harness with one extra tool, knowledge.search
+// (semantic retrieval over company/out/corpus via build-knowledge.ts) — measures
+// whether embedding search on top of fs.search lifts the "where is X documented"
+// facts; needs a pre-built knowledge.db;
 // "native" = the fair competitor baseline (straight Ollama function calling,
 // no retries/recovery — mirrors bench/harnesses/ollama-native.ts but with the
 // same deployment prompt); smolagents-* = Hugging Face's library, off-the-shelf.
@@ -174,8 +180,18 @@ async function runFact(fact: CompanyFact, seed: number): Promise<FactRunResult> 
   if (HARNESS === "native") return runFactNative(fact, seed);
   if (HARNESS === "smolagents-tool") return runFactSmolagents(fact, seed, "tool");
   if (HARNESS === "smolagents-code") return runFactSmolagents(fact, seed, "code");
+  const isRag = HARNESS === "minimal@rag";
   const toolBridge = new DefaultToolBridge();
   for (const tool of makeCompanyTools(CORPUS)) toolBridge.register(tool);
+  if (isRag) {
+    toolBridge.register(makeCompanyKnowledgeTool(KNOWLEDGE_DB, new OllamaEmbedder({ baseUrl: BASE_URL })));
+  }
+  // The RAG arm gets one extra sentence pointing at knowledge.search as a
+  // complement to fs.search — nothing here names a fact, just the new tool.
+  const systemInstruction = isRag
+    ? SYSTEM_INSTRUCTION +
+      " Ergänzend steht dir knowledge.search zur Verfügung: eine semantische Suche über denselben Datenbestand, die auch ohne exakte Stichwörter das passende Dokument findet — nutze sie als Ergänzung zu fs.search, besonders für 'wo steht etwas über X'-Fragen, und lies Treffer anschließend mit fs.read vollständig."
+    : SYSTEM_INSTRUCTION;
   const loop = new DefaultAgentLoop({
     // 16k context: 12 research turns with file reads overflow the 8k server
     // default, which silently evicts the system prompt (observed as protocol
@@ -192,7 +208,7 @@ async function runFact(fact: CompanyFact, seed: number): Promise<FactRunResult> 
     toolBridge,
     validator: new StructuredOutputValidator(),
     promptBuilder: new DefaultPromptBuilder(),
-    systemInstruction: SYSTEM_INSTRUCTION,
+    systemInstruction,
     ...(HARNESS === "minimal@nt" ? { nativeToolCalling: true } : {}),
     // Answer verification: one extra LLM call re-checks the final answer
     // against the collected tool results before it ships (core feature).
@@ -240,6 +256,9 @@ async function runFact(fact: CompanyFact, seed: number): Promise<FactRunResult> 
 async function main(): Promise<void> {
   if (HARNESS.startsWith("smolagents") && !smolagentsAvailable()) {
     throw new Error("smolagents sidecar missing — see bench/smolagents/README");
+  }
+  if (HARNESS === "minimal@rag" && !existsSync(KNOWLEDGE_DB)) {
+    throw new Error(`minimal@rag needs the knowledge index (${KNOWLEDGE_DB}) — build it first: npx tsx bench/company/build-knowledge.ts`);
   }
   console.log(
     `\n=== company probe → ${BASE_URL} model=${MODEL} harness=${HARNESS} prompt=v${PROMPT_VERSION} set=${process.env.COMPANY_SET ?? "core"} seeds=${SEEDS.join(",")} temp=${TEMPERATURE} think=${THINK} ===\n`,

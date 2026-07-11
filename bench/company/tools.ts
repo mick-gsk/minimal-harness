@@ -3,7 +3,7 @@
  * file listing, file reading (with legacy windows-1252 tolerance — German
  * fileservers are full of it) and read-only SQL against the ERP.
  */
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { extractOfficeText } from "../../src/extractors/office.js";
@@ -14,6 +14,8 @@ import {
   type Table,
   type TableQuery,
 } from "../../src/tools/table-query.js";
+import type { Embedder } from "../../src/rag/embedder.js";
+import { SqliteKnowledgeStore } from "../../src/rag/knowledge-store.js";
 import type { ToolDefinition } from "../../src/types/tool.js";
 
 /**
@@ -252,6 +254,65 @@ export function makeDataQueryTool(root: string): ToolDefinition<{ query: TableQu
         throw new Error('query must be an object with a "file" (corpus-relative .csv path)');
       }
       return { result: formatQueryResult(runQuery(q, load)) };
+    },
+  };
+}
+
+/**
+ * Semantic search over the pre-built company knowledge index (knowledge.db).
+ * A complement to fs.search's keyword match: it ranks chunks by embedding
+ * similarity, so it finds the right document even when the caller does not
+ * know the exact wording. The index is built ONLY over company/out/corpus
+ * (build-knowledge.ts) — truth/ (the answer key) is never indexed, so no
+ * ground truth can leak through this tool.
+ *
+ * topK default 3: three ~1000-char chunks (~750 tokens) still fit the 16k
+ * research window next to the running context — the same budget logic that
+ * caps fs.read at MAX_READ_CHARS. Capped at MAX_TOP_K so one call can never
+ * flood the window.
+ */
+const KNOWLEDGE_DEFAULT_TOP_K = 3;
+const KNOWLEDGE_MAX_TOP_K = 8;
+
+export function makeCompanyKnowledgeTool(
+  dbPath: string,
+  embedder: Embedder,
+): ToolDefinition<{ query: string; topK?: number }, { result: string }> {
+  return {
+    name: "knowledge.search",
+    description:
+      "Semantic (meaning-based) search over the entire company knowledge base — a complement to fs.search's keyword match. " +
+      "Best for 'where is something documented about X' questions when you do not know the exact wording or which file to open. " +
+      `Takes {query, topK?} (topK default ${KNOWLEDGE_DEFAULT_TOP_K}) and returns the most relevant text chunks, each with its source path. ` +
+      "Open the full source with fs.read to confirm a finding before you cite it.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "A natural-language question or topic, e.g. 'Wer darf Preisnachlässe freigeben?'" },
+        topK: { type: "number", description: `How many chunks to return (default ${KNOWLEDGE_DEFAULT_TOP_K}, max ${KNOWLEDGE_MAX_TOP_K}).` },
+      },
+      required: ["query"],
+      additionalProperties: false,
+    },
+    async execute(input) {
+      if (typeof input.query !== "string" || input.query.trim().length === 0) {
+        throw new Error("knowledge.search needs a non-empty query");
+      }
+      if (!existsSync(dbPath)) {
+        throw new Error(`knowledge index missing at ${dbPath} — build it first: npx tsx bench/company/build-knowledge.ts`);
+      }
+      const k = Math.max(1, Math.min(KNOWLEDGE_MAX_TOP_K, Math.floor(input.topK ?? KNOWLEDGE_DEFAULT_TOP_K)));
+      const store = new SqliteKnowledgeStore(dbPath, embedder);
+      try {
+        const hits = await store.search(input.query, k);
+        if (hits.length === 0) return { result: "no matches in the knowledge base" };
+        const blocks = hits.map((h, i) => `[${i + 1}] ${h.source} (score ${h.score.toFixed(2)})\n${h.content.trim()}`);
+        return { result: blocks.join("\n\n") };
+      } catch (err) {
+        throw new Error(`knowledge.search failed: ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        store.close();
+      }
     },
   };
 }
