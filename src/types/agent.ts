@@ -19,6 +19,17 @@ export interface AgentLoopInput {
    * receive silently broken JSON.
    */
   responseSchema?: ToolInputSchema;
+  /**
+   * Opt-in persistence scaffold (arXiv 2605.12129): closes the loop into
+   * plan → execute → verify → recover so small local models stop giving up
+   * early. Default off — no other mode changes without this flag. Pass `true`
+   * for defaults or `{ rePlanEvery }` to tune the re-plan cadence.
+   *
+   * Text-protocol only: combining it with nativeToolCalling throws, because a
+   * HALF scaffold measured WORSE than none in the source paper (non-monotone).
+   * See docs/research/2026-07-11-sota-small-model-agents.md.
+   */
+  scaffold?: boolean | { rePlanEvery?: number };
 }
 
 export interface AgentTurn {

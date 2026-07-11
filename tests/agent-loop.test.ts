@@ -367,6 +367,115 @@ describe("DefaultAgentLoop", () => {
     expect(prompt.some((m) => m.role === "system" && m.content.includes("Context Summary"))).toBe(true);
   });
 
+  describe("scaffold mode (opt-in persistence)", () => {
+    // Rationale: arXiv 2605.12129 — a closed plan->execute->verify->recover loop
+    // lifts small-model task success (0.429 -> 0.952). Effect is non-monotone:
+    // the four stages only ship together, gated on input.scaffold. Text-protocol
+    // only; combining with nativeToolCalling must throw.
+    function makeScaffoldLoop(
+      llm: ReturnType<typeof adapterFromFn>,
+      extra: Record<string, unknown> = {},
+    ) {
+      const toolBridge = new DefaultToolBridge();
+      toolBridge.register(calculatorTool);
+      return new DefaultAgentLoop({
+        llm,
+        memory: new InMemoryMemory(),
+        toolBridge,
+        validator: new StructuredOutputValidator(),
+        promptBuilder: new DefaultPromptBuilder(),
+        ...extra,
+      });
+    }
+    const lastUser = (messages: ChatMessage[]) => [...messages].reverse().find((m) => m.role === "user")!.content;
+
+    it("does not accept free text as the answer — re-prompts via the final_answer gate", async () => {
+      let call = 0;
+      const llm = adapterFromFn(async (messages: ChatMessage[]) => {
+        call++;
+        if (/nummerierten Plan/.test(lastUser(messages))) return { content: "1. Direkt antworten." };
+        if (call === 2) return { content: "Ich glaube die Antwort ist 42." }; // free text, no ACTION
+        // the gate reminder must now be in context
+        expect(messages.some((m) => m.role === "user" && /Wenn du fertig bist, nutze ACTION: final_answer/.test(m.content))).toBe(true);
+        return { content: "ACTION: final_answer\nANSWER: 42" };
+      });
+      const result = await makeScaffoldLoop(llm).run({ sessionId: "sc-a", userMessage: "6*7?", scaffold: true });
+      expect(call).toBe(3);
+      expect(result.terminatedReason).toBe("final_answer");
+      expect(result.finalAnswer).toBe("42"); // not the free text
+    });
+
+    it("forces an explicit plan before the first tool call", async () => {
+      let call = 0;
+      const llm = adapterFromFn(async (messages: ChatMessage[]) => {
+        call++;
+        if (call === 1) {
+          // the very first LLM call is the plan step
+          expect(lastUser(messages)).toMatch(/nummerierten Plan/);
+          return { content: "1. calculator nutzen.\n2. Antworten." };
+        }
+        if (call === 2) {
+          // the plan is now in context before any tool executes
+          expect(messages.some((m) => m.role === "assistant" && m.content.startsWith("PLAN:"))).toBe(true);
+          return { content: `ACTION: tool_call\nTOOL: calculator.evaluate\nARGS: {"expression":"6*7"}` };
+        }
+        return { content: "ACTION: final_answer\nANSWER: 42" };
+      });
+      const result = await makeScaffoldLoop(llm).run({ sessionId: "sc-b", userMessage: "6*7?", scaffold: true });
+      expect(result.terminatedReason).toBe("final_answer");
+      expect(result.toolTrace).toHaveLength(1);
+      expect(result.toolTrace[0]!.output).toEqual({ expression: "6*7", result: 42 });
+    });
+
+    it("injects a recovery reflection after a failed/empty tool result", async () => {
+      let call = 0;
+      const llm = adapterFromFn(async (messages: ChatMessage[]) => {
+        call++;
+        if (/nummerierten Plan/.test(lastUser(messages))) return { content: "1. Quelle suchen." };
+        if (call === 2) return { content: `ACTION: tool_call\nTOOL: does.not.exist\nARGS: {}` };
+        // next action turn: the recovery prompt must have been injected
+        expect(messages.some((m) => m.role === "user" && /hat nicht funktioniert/.test(m.content))).toBe(true);
+        return { content: "ACTION: final_answer\nANSWER: nicht gefunden" };
+      });
+      const result = await makeScaffoldLoop(llm).run({ sessionId: "sc-c", userMessage: "?", scaffold: true });
+      expect(result.terminatedReason).toBe("final_answer");
+      expect(result.toolTrace[0]!.error).toBeDefined();
+    });
+
+    it("forces a final_answer call when MAX_TURNS is reached", async () => {
+      let call = 0;
+      const llm = adapterFromFn(async (messages: ChatMessage[]) => {
+        call++;
+        if (/nummerierten Plan/.test(lastUser(messages))) return { content: "1. rechnen." };
+        if (/Turn-Limit/.test(lastUser(messages))) {
+          return { content: "ACTION: final_answer\nANSWER: Zwangsantwort" };
+        }
+        return { content: `ACTION: tool_call\nTOOL: calculator.evaluate\nARGS: {"expression":"1+1"}` };
+      });
+      const result = await makeScaffoldLoop(llm).run({ sessionId: "sc-d", userMessage: "loop", maxTurns: 1, scaffold: true });
+      expect(call).toBe(3); // plan, one tool turn, forced final
+      expect(result.terminatedReason).toBe("final_answer");
+      expect(result.finalAnswer).toBe("Zwangsantwort");
+    });
+
+    it("throws when combined with nativeToolCalling (non-monotone half scaffold)", async () => {
+      const llm = adapterFromFn(async () => ({ content: "hi" }));
+      const loop = makeScaffoldLoop(llm, { nativeToolCalling: true });
+      await expect(loop.run({ sessionId: "sc-e", userMessage: "hi", scaffold: true })).rejects.toThrow(/scaffold/i);
+    });
+
+    it("makes zero extra calls without the flag (regression: default off)", async () => {
+      let call = 0;
+      const llm = adapterFromFn(async () => {
+        call++;
+        return { content: "ACTION: final_answer\nANSWER: hi" };
+      });
+      const result = await makeScaffoldLoop(llm).run({ sessionId: "sc-off", userMessage: "hi" });
+      expect(call).toBe(1); // no plan preamble, no gate — identical to before
+      expect(result.finalAnswer).toBe("hi");
+    });
+  });
+
   it("streams main-turn tokens to the caller via input.onToken", async () => {
     const responses = [
       `ACTION: tool_call\nTOOL: calculator.evaluate\nARGS: {"expression":"3*3"}`,

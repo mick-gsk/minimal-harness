@@ -38,9 +38,12 @@ const THINK = process.env.COMPANY_THINK !== "0";
 // 12 turns: hardest facts need list -> read -> cross-check across 3 systems,
 // observed depth is 6-9 calls; 12 leaves headroom without masking loops.
 const MAX_TURNS = 12;
-// "minimal" = the harness under test (text protocol); "minimal@nt" = the
-// harness in nativeToolCalling mode (same loop/memory/policy, tool specs via
-// API — the right config for models trained on function calling, e.g. llama);
+// "minimal" = the harness under test (text protocol); "minimal@scaffold" = the
+// text-protocol harness with the opt-in persistence scaffold (plan/gate/recover
+// + first-thought — the arXiv 2605.12129 lever against early give-up);
+// "minimal@nt" = the harness in nativeToolCalling mode (same loop/memory/policy,
+// tool specs via API — the right config for models trained on function calling,
+// e.g. llama);
 // "native" = the fair competitor baseline (straight Ollama function calling,
 // no retries/recovery — mirrors bench/harnesses/ollama-native.ts but with the
 // same deployment prompt); smolagents-* = Hugging Face's library, off-the-shelf.
@@ -208,7 +211,14 @@ async function runFact(fact: CompanyFact, seed: number): Promise<FactRunResult> 
   });
 
   try {
-    const result = await loop.run({ sessionId: `${fact.id}-${seed}`, userMessage: fact.frage, maxTurns: MAX_TURNS });
+    const result = await loop.run({
+      sessionId: `${fact.id}-${seed}`,
+      userMessage: fact.frage,
+      maxTurns: MAX_TURNS,
+      // "minimal@scaffold" = opt-in persistence scaffold (plan/gate/recover +
+      // first-thought). Text-protocol only, so no @nt combination here.
+      ...(HARNESS === "minimal@scaffold" ? { scaffold: true } : {}),
+    });
     if (result.terminatedReason !== "final_answer") {
       const raw = result.rawTurns.at(-1)?.rawAssistantOutput?.slice(0, 2000);
       return {

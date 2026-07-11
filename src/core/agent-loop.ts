@@ -16,6 +16,60 @@ import { validateToolInput } from "../tools/schema.js";
 import { safeParseJson } from "../utils/json.js";
 import type { ToolInputSchema } from "../types/tool.js";
 
+/**
+ * Persistence-scaffold config (arXiv 2605.12129). The paper reports the effect
+ * is NON-MONOTONE — a partial wrapper scored WORSE than none — so the four
+ * stages (plan / gate / recover / first-thought) always run together, never
+ * piecemeal.
+ */
+interface ScaffoldConfig {
+  rePlanEvery: number;
+}
+
+/**
+ * Re-plan cadence. Default 4: keeps the plan current without doubling every
+ * action step with an extra planning call. bench/company observes a research
+ * depth of 6–9 tool calls per hard fact, so a re-plan every 4th action turn
+ * lands roughly one mid-course correction per run — the point where a small
+ * model tends to drift off its original plan — without turning half the turn
+ * budget into planning overhead. (CLAUDE.md rule 4: every constant has a why.)
+ */
+const DEFAULT_RE_PLAN_EVERY = 4;
+
+function normalizeScaffold(flag: boolean | { rePlanEvery?: number } | undefined): ScaffoldConfig | undefined {
+  if (!flag) return undefined;
+  const rePlanEvery = typeof flag === "object" ? (flag.rePlanEvery ?? DEFAULT_RE_PLAN_EVERY) : DEFAULT_RE_PLAN_EVERY;
+  return { rePlanEvery: Math.max(1, rePlanEvery) };
+}
+
+/**
+ * Scaffold-mode injected prompts. German on purpose: the primary target
+ * (bench/company, qwen3:8b) operates in German and these strings are
+ * model-facing content, not code. The four stages, per the paper:
+ *  - PLAN     forces an explicit numbered plan before the first action.
+ *  - RECOVERY turns an empty/failed tool result into forced reflection.
+ *  - GATE     rejects free text — the loop may only end via final_answer.
+ *  - FORCE    the last resort when MAX_TURNS is hit.
+ *  - FIRST_THOUGHT (arXiv 2505.17612) primes the agentic mode each turn.
+ */
+const SCAFFOLD_PLAN_PROMPT =
+  "Bevor du handelst: Schreibe einen kurzen, nummerierten Plan (1., 2., 3. …) — " +
+  "welche Quellen/Tools du in welcher Reihenfolge nutzt, um die Frage zu beantworten. " +
+  "Nur der Plan, noch keine Aktion.";
+const SCAFFOLD_FIRST_THOUGHT =
+  'Beginne deine Antwort mit "Ich prüfe meinen Plan und wähle die nächste Aktion:" ' +
+  "und antworte dann mit genau einer ACTION (tool_call oder final_answer).";
+const SCAFFOLD_RECOVERY_PROMPT =
+  "Das hat nicht funktioniert (Fehler oder kein Treffer). Was sagt dir das? " +
+  "Welche alternative Quelle oder welchen anderen Suchbegriff probierst du als Nächstes laut deinem Plan? " +
+  "Wenn die Information wirklich nirgends steht, sage das per final_answer.";
+const SCAFFOLD_GATE_PROMPT =
+  "Antworte mit einer Aktion im vorgegebenen Format. Wenn du fertig bist, nutze ACTION: final_answer " +
+  '(auch eine Verweigerung wie "nicht gefunden" gibst du per final_answer aus).';
+const SCAFFOLD_FORCE_FINAL_PROMPT =
+  "Du hast das Turn-Limit erreicht. Antworte jetzt mit ACTION: final_answer auf Basis der bisherigen Ergebnisse " +
+  "(oder sage per final_answer, dass die Information nicht ableitbar ist).";
+
 export interface AgentLoopDeps {
   llm: LLMAdapter;
   memory: Memory;
@@ -184,9 +238,85 @@ export class DefaultAgentLoop implements AgentLoop {
     }
   }
 
+  /**
+   * Builds the prompt for one turn: keeps the last `maxContextMessages`
+   * verbatim and folds everything older into a single summary block so the
+   * prompt stays bounded. Extracted so the scaffold's forced-final step reuses
+   * the exact same context contract as the main loop.
+   */
+  private async buildTurnMessages(sessionId: string, systemInstruction: string): Promise<ChatMessage[]> {
+    const state = await this.deps.memory.get(sessionId);
+    let recentMessages = state.messages;
+    let memorySummary = state.summary;
+    if (state.messages.length > this.maxContextMessages) {
+      const olderCount = state.messages.length - this.maxContextMessages;
+      const older = state.messages.slice(0, olderCount);
+      recentMessages = state.messages.slice(olderCount);
+      const folded = extractiveSummary(older, older.length);
+      memorySummary = state.summary ? `${state.summary}\n${folded}` : folded;
+    }
+    return this.deps.promptBuilder.build({
+      systemInstruction,
+      // In native mode the tool specs travel via the API; the text protocol
+      // block would only burn tokens the model never uses.
+      toolDescriptions: this.deps.nativeToolCalling
+        ? []
+        : this.deps.toolBridge.list().map((t) => `- **${t.name}**: ${t.description}`),
+      ...(memorySummary ? { memorySummary } : {}),
+      recentMessages,
+    });
+  }
+
+  /**
+   * Scaffold recovery trigger: a tool result is "unproductive" when it errored
+   * or carries no content (null/empty string/[]/{}). First-principles read of
+   * "leeres/fehlgeschlagenes Tool-Ergebnis" — exactly the signals that make a
+   * small model give up or loop, so they earn a forced reflection.
+   */
+  private static isUnproductive(record: ToolExecutionRecord): boolean {
+    if (record.error !== undefined) return true;
+    const out = record.output;
+    if (out === undefined || out === null) return true;
+    if (typeof out === "string") return out.trim().length === 0;
+    if (Array.isArray(out)) return out.length === 0;
+    if (typeof out === "object") return Object.keys(out).length === 0;
+    return false;
+  }
+
+  /**
+   * Plan stage: on plan turns (0, then every `rePlanEvery`), one extra LLM
+   * call produces an explicit numbered plan before any action. The plan is
+   * appended to memory AND to the live message array so this turn's action
+   * call already sees it. Not offered any tools — it is a pure thinking step.
+   */
+  private async scaffoldPlan(
+    sessionId: string,
+    messages: ChatMessage[],
+  ): Promise<void> {
+    const planResponse = await this.deps.llm.generate([
+      ...messages,
+      { role: "user", content: SCAFFOLD_PLAN_PROMPT },
+    ]);
+    const plan = `PLAN:\n${planResponse.content.trim()}`;
+    await this.deps.memory.append(sessionId, { role: "assistant", content: plan, timestamp: Date.now() });
+    messages.push({ role: "assistant", content: plan });
+  }
+
   async run(input: AgentLoopInput): Promise<AgentLoopResult> {
     const { sessionId, userMessage, maxTurns = 10, onToken, responseSchema } = input;
-    const { llm, memory, toolBridge, validator, promptBuilder } = this.deps;
+    const { llm, memory, toolBridge, validator } = this.deps;
+    const scaffold = normalizeScaffold(input.scaffold);
+    // Non-monotone warning (arXiv 2605.12129): the scaffold gates termination
+    // through the text protocol's final_answer action. In native mode the model
+    // ends a run with plain content and its tool calls bypass the parser — the
+    // gate/recovery would be a HALF wrapper, which the paper measured as worse
+    // than none. Refuse the combination loudly instead of shipping it broken.
+    if (scaffold && this.deps.nativeToolCalling) {
+      throw new AgentError(
+        "scaffold mode is text-protocol only and cannot be combined with nativeToolCalling " +
+          "(a half scaffold measured worse than none — see arXiv 2605.12129)",
+      );
+    }
     const baseInstruction = this.deps.systemInstruction ?? "You are a helpful assistant.";
     // The schema contract goes into the system prompt so the model knows the
     // target format from turn one instead of learning it through retries.
@@ -214,34 +344,26 @@ export class DefaultAgentLoop implements AgentLoop {
     }));
 
     for (let turn = 0; turn < maxTurns; turn++) {
-      const state = await memory.get(sessionId);
+      const messages = await this.buildTurnMessages(sessionId, systemInstruction);
 
-      // Context management: keep only the last `maxContextMessages` verbatim and
-      // fold everything older into a single summary block so the prompt is bounded.
-      let recentMessages = state.messages;
-      let memorySummary = state.summary;
-      if (state.messages.length > this.maxContextMessages) {
-        const olderCount = state.messages.length - this.maxContextMessages;
-        const older = state.messages.slice(0, olderCount);
-        recentMessages = state.messages.slice(olderCount);
-        const folded = extractiveSummary(older, older.length);
-        memorySummary = state.summary ? `${state.summary}\n${folded}` : folded;
+      // Scaffold preamble (text-protocol only; scaffold+native throws above).
+      if (scaffold) {
+        // Plan stage: force a numbered plan before the first action, then
+        // periodically re-plan to keep it current (see DEFAULT_RE_PLAN_EVERY).
+        if (turn % scaffold.rePlanEvery === 0) {
+          await this.scaffoldPlan(sessionId, messages);
+        }
+        // First-thought prefix: prime the agentic mode this turn (ephemeral —
+        // not persisted, so it does not accumulate across turns).
+        messages.push({ role: "user", content: SCAFFOLD_FIRST_THOUGHT });
       }
-
-      const messages = promptBuilder.build({
-        systemInstruction,
-        // In native mode the tool specs travel via the API; the text protocol
-        // block would only burn tokens the model never uses.
-        toolDescriptions: this.deps.nativeToolCalling
-          ? []
-          : toolBridge.list().map((t) => `- **${t.name}**: ${t.description}`),
-        ...(memorySummary ? { memorySummary } : {}),
-        recentMessages,
-      });
 
       logger.debug(`[turn ${turn}] Calling LLM`);
       const llmResponse = await llm.generate(messages, {
-        tools: toolSpecs,
+        // Scaffold gates termination through the text protocol, so it must not
+        // offer native tool specs — otherwise a function-calling backend would
+        // answer with native tool calls that skip the parser and the gate.
+        ...(scaffold ? {} : { tools: toolSpecs }),
         ...(onToken ? { onToken } : {}),
       });
       const rawOutput = llmResponse.content;
@@ -378,7 +500,10 @@ export class DefaultAgentLoop implements AgentLoop {
         parsed = { kind: "final", finalText: rawOutput };
       }
 
-      while (parsed.kind === "invalid" && retryCount < defaultRetryStrategy.maxRetries) {
+      // Scaffold skips the generic reformat-retry: an invalid (free-text) reply
+      // is routed through the final_answer gate below instead, which both
+      // re-prompts AND names final_answer as the only legitimate exit.
+      while (parsed.kind === "invalid" && retryCount < defaultRetryStrategy.maxRetries && !scaffold) {
         retryCount++;
         logger.warn(`[turn ${turn}] Output invalid, retry ${retryCount}`);
         sm.transition("VALIDATION_FAILED"); // generating -> retrying
@@ -449,7 +574,24 @@ export class DefaultAgentLoop implements AgentLoop {
           content: JSON.stringify({ tool: toolName, result: record.output ?? record.error }),
           timestamp: Date.now(),
         });
+        // Recovery stage: an errored or empty tool result gets a forced
+        // reflection instead of letting the model drift or give up.
+        if (scaffold && DefaultAgentLoop.isUnproductive(record)) {
+          await memory.append(sessionId, { role: "user", content: SCAFFOLD_RECOVERY_PROMPT, timestamp: Date.now() });
+        }
         sm.transition("TOOL_DONE"); // executing_tool -> generating
+        continue;
+      }
+
+      // final_answer gate (scaffold): free text is NOT a valid ending. Record
+      // the turn, remind the model that the loop may only end via final_answer,
+      // and keep going (bounded by maxTurns). Refusal stays legitimate — it
+      // just has to travel through final_answer, too.
+      if (scaffold) {
+        rawTurns.push(agentTurn);
+        await memory.append(sessionId, { role: "assistant", content: lastOutput, timestamp: Date.now() });
+        await memory.append(sessionId, { role: "user", content: SCAFFOLD_GATE_PROMPT, timestamp: Date.now() });
+        sm.transition("LLM_RESPONSE"); // generating -> generating (stay in the loop)
         continue;
       }
 
@@ -458,6 +600,32 @@ export class DefaultAgentLoop implements AgentLoop {
       sm.transition("ERROR"); // generating -> failed
       rawTurns.push(agentTurn);
       return { sessionId, finalAnswer: "", toolTrace, rawTurns, terminatedReason: "validation_failed", finalState: sm.current() };
+    }
+
+    // Scaffold MAX_TURNS: one forced final_answer call on the accumulated
+    // results rather than returning an empty answer — the model must commit to
+    // something (an answer or an explicit "not derivable").
+    if (scaffold) {
+      const messages = await this.buildTurnMessages(sessionId, systemInstruction);
+      const forced = await llm.generate([...messages, { role: "user", content: SCAFFOLD_FORCE_FINAL_PROMPT }]);
+      const parsed = parseAssistantOutput(forced.content, validator);
+      let finalAnswer = parsed.kind === "final" ? (parsed.finalText ?? forced.content) : forced.content.trim();
+      if (this.deps.verifyFinalAnswer && toolTrace.length > 0) {
+        finalAnswer = await this.verifyAnswer(messages, forced.content, finalAnswer);
+      }
+      await memory.append(sessionId, { role: "assistant", content: forced.content, timestamp: Date.now() });
+      rawTurns.push({ turnIndex: maxTurns, rawAssistantOutput: forced.content, toolCalls: [] });
+      sm.transition("MAX_TURNS"); // generating -> done
+      // A forced answer that finally used the gate is a real final_answer;
+      // otherwise it is the best-effort content salvaged at the turn limit.
+      return {
+        sessionId,
+        finalAnswer,
+        toolTrace,
+        rawTurns,
+        terminatedReason: parsed.kind === "final" ? "final_answer" : "max_turns",
+        finalState: sm.current(),
+      };
     }
 
     sm.transition("MAX_TURNS"); // generating -> done
