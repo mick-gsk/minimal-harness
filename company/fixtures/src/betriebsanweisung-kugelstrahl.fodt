@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document
+  xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"
+  office:version="1.2"
+  office:mimetype="application/vnd.oasis.opendocument.text">
+  <office:automatic-styles>
+    <style:style style:name="Tbl" style:family="table">
+      <style:table-properties style:width="17cm" table:align="left"/>
+    </style:style>
+  </office:automatic-styles>
+  <office:body>
+    <office:text>
+      <text:h text:outline-level="1">BA-07 Betriebsanweisung Kugelstrahlanlage</text:h>
+      <text:p>nach § 14 GefStoffV / DGUV Vorschrift 1</text:p>
+      <text:p>Stand: 06.03.2024</text:p>
+      <text:p/>
+      <text:h text:outline-level="2">1 Gefahren für Mensch und Umwelt</text:h>
+      <text:p>Strahlmittelstaub. Gehörschädigender Lärm über 85 dB(A). Verletzungsgefahr durch austretendes Strahlmittel bei geöffneter Kabine.</text:p>
+      <text:h text:outline-level="2">2 Schutzmaßnahmen</text:h>
+      <text:p>Gehörschutz und Schutzbrille sind zwingend zu tragen. Die Kabine darf nur bei Stillstand und abgeschalteter Strahlmittelförderung geöffnet werden. Absaugung vor Arbeitsbeginn auf Funktion prüfen.</text:p>
+      <text:h text:outline-level="2">3 Verhalten bei Störungen</text:h>
+      <text:p>Anlage über den Not-Aus stillsetzen. Instandhaltung verständigen. Störung im Wartungsbuch eintragen.</text:p>
+      <text:h text:outline-level="2">4 Erste Hilfe</text:h>
+      <text:p>Bei Augenverletzung sofort mit Augendusche spülen und Durchgangsarzt aufsuchen. Ersthelfer: siehe Aushang.</text:p>
+      <text:p/>
+      <text:p>Unterschrift Vorgesetzter: ______________________</text:p>
+    </office:text>
+  </office:body>
+</office:document>

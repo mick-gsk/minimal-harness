@@ -17,6 +17,7 @@
     "lint": "eslint src examples",
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit -p tsconfig.bench.json",
+    "typecheck:company": "tsc --noEmit -p company/tsconfig.json",
     "test": "node --experimental-vm-modules node_modules/.bin/jest",
     "bench": "tsx bench/runner.ts",
     "bench:probe": "npx tsx bench/probe.ts",

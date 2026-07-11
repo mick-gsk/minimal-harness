@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document
+  xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"
+  office:version="1.2"
+  office:mimetype="application/vnd.oasis.opendocument.text">
+  <office:automatic-styles>
+    <style:style style:name="Tbl" style:family="table">
+      <style:table-properties style:width="17cm" table:align="left"/>
+    </style:style>
+  </office:automatic-styles>
+  <office:body>
+    <office:text>
+      <text:h text:outline-level="1">Arbeitszeugnis</text:h>
+      <text:p>VERTRAULICH — Personalakte</text:p>
+      <text:p/>
+      <text:p>Herr Manfred Grothe, geboren 1963, war vom 01.05.1996 bis zum 30.09.2021 in unserem Unternehmen als Mitarbeiter im Vertriebsaußendienst tätig.</text:p>
+      <text:p/>
+      <text:p>Zu seinen Aufgaben gehörten die Betreuung der Bestandskunden im Märkischen Kreis, die Erstellung von Angebotskalkulationen sowie die Begleitung von Erstmusterfreigaben.</text:p>
+      <text:p/>
+      <text:p>Herr Grothe verfügte über fundierte Fachkenntnisse und setzte diese stets sicher und zielführend ein. Er erledigte die ihm übertragenen Aufgaben stets zu unserer vollsten Zufriedenheit.</text:p>
+      <text:p/>
+      <text:p>Das Arbeitsverhältnis endete auf eigenen Wunsch des Mitarbeiters. Wir bedauern sein Ausscheiden und wünschen ihm für die Zukunft alles Gute.</text:p>
+      <text:p/>
+      <text:p>Iserlohn-Sümmern, 30.09.2021</text:p>
+      <text:p>F. Selkinghaus, Geschäftsführung</text:p>
+    </office:text>
+  </office:body>
+</office:document>

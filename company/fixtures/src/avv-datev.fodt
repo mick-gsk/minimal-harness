@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document
+  xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"
+  office:version="1.2"
+  office:mimetype="application/vnd.oasis.opendocument.text">
+  <office:automatic-styles>
+    <style:style style:name="Tbl" style:family="table">
+      <style:table-properties style:width="17cm" table:align="left"/>
+    </style:style>
+  </office:automatic-styles>
+  <office:body>
+    <office:text>
+      <text:h text:outline-level="1">Vertrag zur Auftragsverarbeitung</text:h>
+      <text:p>nach Art. 28 DSGVO</text:p>
+      <text:p/>
+      <text:p>Verantwortlicher: Selkinghaus Federn- und Stanztechnik GmbH &amp; Co. KG</text:p>
+      <text:p>Auftragsverarbeiter: Steuerberatungskanzlei Kortmann, Iserlohn</text:p>
+      <text:p/>
+      <text:h text:outline-level="2">1 Gegenstand</text:h>
+      <text:p>Der Auftragsverarbeiter erstellt die Lohn- und Finanzbuchhaltung. Die Verarbeitung erfolgt über die DATEV-Rechenzentren.</text:p>
+      <text:h text:outline-level="2">2 Datenkategorien</text:h>
+      <text:p>Stammdaten, Entgeltdaten, Bankverbindung, Sozialversicherungsnummern der Beschäftigten.</text:p>
+      <text:h text:outline-level="2">3 Technische und organisatorische Maßnahmen</text:h>
+      <text:p>Die Maßnahmen des Auftragsverarbeiters ergeben sich aus Anlage 1. Der Verantwortliche hat sich vor Beginn der Verarbeitung von deren Einhaltung überzeugt.</text:p>
+      <text:h text:outline-level="2">4 Unterauftragsverhältnisse</text:h>
+      <text:p>Der Einsatz der DATEV eG als Unterauftragsverarbeiter ist genehmigt.</text:p>
+      <text:h text:outline-level="2">5 Löschung</text:h>
+      <text:p>Nach Beendigung des Auftrags werden die Daten gelöscht, soweit keine gesetzlichen Aufbewahrungspflichten entgegenstehen.</text:p>
+      <text:p/>
+      <text:p>Iserlohn, 14.03.2023</text:p>
+    </office:text>
+  </office:body>
+</office:document>

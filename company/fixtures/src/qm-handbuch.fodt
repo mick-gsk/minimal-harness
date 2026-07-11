@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document
+  xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"
+  office:version="1.2"
+  office:mimetype="application/vnd.oasis.opendocument.text">
+  <office:automatic-styles>
+    <style:style style:name="Tbl" style:family="table">
+      <style:table-properties style:width="17cm" table:align="left"/>
+    </style:style>
+  </office:automatic-styles>
+  <office:body>
+    <office:text>
+      <text:h text:outline-level="1">Qualitätsmanagementhandbuch</text:h>
+      <text:p>Revision 7 — freigegeben am 28.08.2025</text:p>
+      <text:p/>
+      <text:h text:outline-level="2">1 Anwendungsbereich</text:h>
+      <text:p>Der Geltungsbereich umfasst Entwicklung und Fertigung von Federn, Stanz- und Drahtbiegeteilen am Standort Iserlohn-Sümmern.</text:p>
+      <text:h text:outline-level="2">2 Zertifizierung</text:h>
+      <text:p>Das Unternehmen ist nach DIN EN ISO 9001:2015 zertifiziert.</text:p>
+      <text:p>Hinweis: Der 2019 begonnene Anlauf zur Zertifizierung nach IATF 16949 wurde aus Kostengründen abgebrochen. Kundenspezifische Forderungen der Automobilkunden werden im Rahmen von Kundenaudits abgedeckt.</text:p>
+      <text:h text:outline-level="2">3 Dokumentenlenkung</text:h>
+      <text:p>Alle freigegebenen Dokumente sind in der Dokumentenlenkungsliste geführt. Ausschließlich die dort genannte Revision ist gültig. Kopien außerhalb des Ordners QM\freigegeben gelten als nicht gelenkt.</text:p>
+      <text:h text:outline-level="2">4 Prozesse</text:h>
+      <table:table table:name="T11" table:style-name="Tbl">
+        <table:table-column table:number-columns-repeated="3"/>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Prozess</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Verantwortlich</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Nachweis</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Angebot und Auftrag</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Vertrieb</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Angebot, Auftragsbestätigung</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Konstruktion</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Konstruktion</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Zeichnung, Lastenheft</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Beschaffung</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Einkauf</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Bestellung, Wareneingangsprüfung</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Fertigung</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Fertigung</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Arbeitsanweisung, BDE</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Prüfung</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Qualitätssicherung</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Prüfprotokoll FB-014</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Reklamation</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Qualitätssicherung</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>8D-Report</text:p></table:table-cell></table:table-row>
+      </table:table>
+    </office:text>
+  </office:body>
+</office:document>

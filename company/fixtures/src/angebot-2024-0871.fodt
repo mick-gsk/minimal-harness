@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document
+  xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"
+  office:version="1.2"
+  office:mimetype="application/vnd.oasis.opendocument.text">
+  <office:automatic-styles>
+    <style:style style:name="Tbl" style:family="table">
+      <style:table-properties style:width="17cm" table:align="left"/>
+    </style:style>
+  </office:automatic-styles>
+  <office:body>
+    <office:text>
+      <text:h text:outline-level="1">Angebot 2024-0871</text:h>
+      <text:p>Selkinghaus Federn- und Stanztechnik GmbH &amp; Co. KG</text:p>
+      <text:p>Im Hagen 14, 58640 Iserlohn-Sümmern</text:p>
+      <text:p/>
+      <text:p>An: Wittenbrink Antriebstechnik GmbH, 58507 Lüdenscheid</text:p>
+      <text:p>Datum: 18.03.2024</text:p>
+      <text:p/>
+      <table:table table:name="T7" table:style-name="Tbl">
+        <table:table-column table:number-columns-repeated="5"/>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Position</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Artikel</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Menge</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Stückpreis</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Nettowert</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>1</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>DF-12040-DH — Druckfeder 12x40, Federstahldraht DH, verzinkt-blau</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>250.000 Stück</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>1,29 EUR</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>322.500,00 EUR</text:p></table:table-cell></table:table-row>
+      </table:table>
+      <text:p/>
+      <text:p>Liefertermin: 28.06.2024, Abruf in vier Teillieferungen.</text:p>
+      <text:p>Zahlungsziel: 30 Tage netto.</text:p>
+      <text:p>Werkzeug ist vorhanden, keine Einmalkosten.</text:p>
+      <text:p/>
+      <text:p>Es gelten unsere Allgemeinen Geschäftsbedingungen.</text:p>
+      <text:p/>
+      <text:p>i.A. M. Hüttemann, Vertriebsleitung</text:p>
+    </office:text>
+  </office:body>
+</office:document>

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document
+  xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"
+  office:version="1.2"
+  office:mimetype="application/vnd.oasis.opendocument.text">
+  <office:automatic-styles>
+    <style:style style:name="Tbl" style:family="table">
+      <style:table-properties style:width="17cm" table:align="left"/>
+    </style:style>
+  </office:automatic-styles>
+  <office:body>
+    <office:text>
+      <text:h text:outline-level="1">AA-018 Arbeitsanweisung Stanzen</text:h>
+      <text:p>Revision: E</text:p>
+      <text:p>Freigegeben: 04.11.2024 durch S. Wiethoff (QMB)</text:p>
+      <text:p/>
+      <text:h text:outline-level="2">1 Geltungsbereich</text:h>
+      <text:p>Gilt für alle Stanz- und Folgeverbundwerkzeuge an den Exzenterpressen in Halle 1 und Halle 3.</text:p>
+      <text:h text:outline-level="2">2 Rüsten</text:h>
+      <text:p>Werkzeug nach Werkzeugstammkarte einrichten. Schnitthöhe und Vorschub gemäß Rüstblatt einstellen. Erstes Teil dem Schichtführer vorlegen.</text:p>
+      <text:h text:outline-level="2">3 Vorgabewerte</text:h>
+      <table:table table:name="T9" table:style-name="Tbl">
+        <table:table-column table:number-columns-repeated="2"/>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Merkmal</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Vorgabe</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Erstmusterfreigabe</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>vor Serienstart, durch QS</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Prüfintervall</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>jedes 250. Teil</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Nachschliff</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>nach Vorgabe der Werkzeugstammkarte</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Schmierung</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Ziehöl Typ 3, dünn aufgetragen</text:p></table:table-cell></table:table-row>
+      </table:table>
+      <text:h text:outline-level="2">4 Dokumentation</text:h>
+      <text:p>Prüfergebnisse in QS-Formblatt FB-014 eintragen. Abweichungen sofort dem Schichtführer melden.</text:p>
+    </office:text>
+  </office:body>
+</office:document>

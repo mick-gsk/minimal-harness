@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document
+  xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"
+  office:version="1.2"
+  office:mimetype="application/vnd.oasis.opendocument.text">
+  <office:automatic-styles>
+    <style:style style:name="Tbl" style:family="table">
+      <style:table-properties style:width="17cm" table:align="left"/>
+    </style:style>
+  </office:automatic-styles>
+  <office:body>
+    <office:text>
+      <text:h text:outline-level="1">Rahmenliefervertrag</text:h>
+      <text:p>zwischen Selkinghaus Federn- und Stanztechnik GmbH &amp; Co. KG (Besteller)</text:p>
+      <text:p>und Rehwinkel GmbH (Lieferant)</text:p>
+      <text:p/>
+      <text:h text:outline-level="2">§ 1 Vertragsgegenstand</text:h>
+      <text:p>Der Lieferant liefert Federstahldraht nach DIN EN 10270-1 in den Güten SH und DH.</text:p>
+      <text:h text:outline-level="2">§ 2 Laufzeit</text:h>
+      <text:p>Der Vertrag beginnt am 01.01.2024 und läuft bis zum 31.12.2026. Er verlängert sich um jeweils ein Jahr, sofern er nicht mit einer Frist von drei Monaten gekündigt wird.</text:p>
+      <text:h text:outline-level="2">§ 3 Preise</text:h>
+      <text:p>Die Preise werden quartalsweise an den Notierungspreis für Walzdraht angepasst. Basispreis: 1.480,00 EUR je Tonne, Stand 01.01.2024.</text:p>
+      <text:h text:outline-level="2">§ 4 Qualität</text:h>
+      <text:p>Jede Lieferung ist mit einem Werkszeugnis 3.1 nach DIN EN 10204 zu begleiten.</text:p>
+      <text:h text:outline-level="2">§ 5 Gerichtsstand</text:h>
+      <text:p>Gerichtsstand ist Iserlohn.</text:p>
+    </office:text>
+  </office:body>
+</office:document>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document
+  xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"
+  office:version="1.2"
+  office:mimetype="application/vnd.oasis.opendocument.spreadsheet">
+  <office:automatic-styles>
+    <style:style style:name="ta_visible" style:family="table">
+      <style:table-properties table:display="true"/>
+    </style:style>
+    <style:style style:name="ta_hidden" style:family="table">
+      <style:table-properties table:display="false"/>
+    </style:style>
+  </office:automatic-styles>
+  <office:body>
+    <office:spreadsheet>
+      <table:table table:name="Preisliste 2026" table:style-name="ta_visible">
+        <table:table-column table:number-columns-repeated="5"/>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Artikelnr</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Bezeichnung</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Werkstoff</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Listenpreis EUR</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>gültig ab</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>DF-12040-DH</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Druckfeder 12x40, Federstahldraht DH, verzinkt-blau</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>DH (DIN EN 10270-1)</text:p></table:table-cell><table:table-cell office:value-type="float" office:value="1.29"><text:p>1,29</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>01.01.2026</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>DF-08025-SH</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Druckfeder 8x25, SH</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>SH (DIN EN 10270-1)</text:p></table:table-cell><table:table-cell office:value-type="float" office:value="0.74"><text:p>0,74</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>01.01.2026</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>SB-44210-DH</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Stanzbiegeteil 20x60</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>DC01 (1.0330)</text:p></table:table-cell><table:table-cell office:value-type="float" office:value="2.31"><text:p>2,31</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>01.01.2026</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>KF-15092-SH</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Kontaktfeder 15x92</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>CuSn6 (2.1020)</text:p></table:table-cell><table:table-cell office:value-type="float" office:value="3.16"><text:p>3,16</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>01.01.2026</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell/><table:table-cell/><table:table-cell/><table:table-cell/><table:table-cell/></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Kundenindividuelle Preise sind im ERP hinterlegt und gehen der Liste vor.</text:p></table:table-cell><table:table-cell/><table:table-cell/><table:table-cell/><table:table-cell/></table:table-row>
+      </table:table>
+    </office:spreadsheet>
+  </office:body>
+</office:document>

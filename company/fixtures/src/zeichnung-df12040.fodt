@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document
+  xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"
+  office:version="1.2"
+  office:mimetype="application/vnd.oasis.opendocument.text">
+  <office:automatic-styles>
+    <style:style style:name="Tbl" style:family="table">
+      <style:table-properties style:width="17cm" table:align="left"/>
+    </style:style>
+  </office:automatic-styles>
+  <office:body>
+    <office:text>
+      <text:h text:outline-level="1">Technische Zeichnung</text:h>
+      <text:p>Zeichnungsnummer: DF-12040-DH</text:p>
+      <text:p>Revision: 3 — 11.01.2023</text:p>
+      <text:p/>
+      <table:table table:name="T4" table:style-name="Tbl">
+        <table:table-column table:number-columns-repeated="3"/>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Merkmal</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Wert</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Toleranz</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Außendurchmesser De</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>12,00 mm</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>± 0,15 mm</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Länge L0</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>40,00 mm</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>± 0,50 mm</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Drahtdurchmesser d</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>1,25 mm</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>± 0,02 mm</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Windungszahl n</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>7,5</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>—</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Federrate R</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>4,80 N/mm</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>± 8 %</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Werkstoff</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Federstahldraht DH nach DIN EN 10270-1</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>—</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Oberfläche</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>verzinkt-blau, 5 µm</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>—</text:p></table:table-cell></table:table-row>
+      </table:table>
+      <text:p/>
+      <text:p>Berechnung nach DIN EN 13906-1. Allgemeintoleranzen DIN EN ISO 2768-m.</text:p>
+      <text:p>Gezeichnet: J. Eickhoff   Geprüft: S. Wiethoff   Freigegeben: F. Selkinghaus</text:p>
+      <text:p/>
+      <text:p>Achtung: Diese Zeichnung ist Eigentum der Wittenbrink Antriebstechnik GmbH und unterliegt der Geheimhaltungsvereinbarung vom 03.02.2019.</text:p>
+    </office:text>
+  </office:body>
+</office:document>

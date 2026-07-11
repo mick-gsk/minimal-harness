@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document
+  xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"
+  office:version="1.2"
+  office:mimetype="application/vnd.oasis.opendocument.text">
+  <office:automatic-styles>
+    <style:style style:name="Tbl" style:family="table">
+      <style:table-properties style:width="17cm" table:align="left"/>
+    </style:style>
+  </office:automatic-styles>
+  <office:body>
+    <office:text>
+      <text:h text:outline-level="1">Protokoll Managementbewertung 2025</text:h>
+      <text:p>nach DIN EN ISO 9001:2015, Abschnitt 9.3</text:p>
+      <text:p>Datum: 12.12.2025, Teilnehmer: Geschäftsführung, QMB, Fertigungsleitung</text:p>
+      <text:p/>
+      <text:h text:outline-level="2">1 Kennzahlen</text:h>
+      <table:table table:name="T5" table:style-name="Tbl">
+        <table:table-column table:number-columns-repeated="4"/>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Kennzahl</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>2024</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>2025</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Ziel</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Liefertreue</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>93,1 %</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>91,4 %</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>≥ 95 %</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Ausschussquote</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>1,8 %</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>2,1 %</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>≤ 1,5 %</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Reklamationen (Stück)</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>17</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>19</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>≤ 12</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Kundenzufriedenheit</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>2,1</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>2,3</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>≤ 2,0</text:p></table:table-cell></table:table-row>
+      </table:table>
+      <text:h text:outline-level="2">2 Bewertung</text:h>
+      <text:p>Die Liefertreue hat sich verschlechtert. Ursache ist überwiegend der Engpass beim externen Verzinker. Eine zweite Bezugsquelle wurde 2024 beschlossen, aber nicht umgesetzt.</text:p>
+      <text:h text:outline-level="2">3 Zertifizierung</text:h>
+      <text:p>Der 2019 begonnene Anlauf zur IATF 16949 wurde aus Kostengründen abgebrochen. Die Automobilkunden decken ihre Forderungen über Kundenaudits ab. Eine Wiederaufnahme wird derzeit nicht verfolgt.</text:p>
+      <text:h text:outline-level="2">4 Maßnahmen</text:h>
+      <text:p>M1: Zweitlieferant Galvanik bis 30.06.2026 qualifizieren. Verantwortlich: Einkauf.</text:p>
+      <text:p>M2: Prüfintervall AA-032 überprüfen; die Fertigung meldet Abweichungen zur freigegebenen Revision. Verantwortlich: QMB.</text:p>
+      <text:p>M3: Nachfolge Kalkulation regeln. Verantwortlich: Geschäftsführung.</text:p>
+    </office:text>
+  </office:body>
+</office:document>

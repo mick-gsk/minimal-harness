@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document
+  xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"
+  office:version="1.2"
+  office:mimetype="application/vnd.oasis.opendocument.text">
+  <office:automatic-styles>
+    <style:style style:name="Tbl" style:family="table">
+      <style:table-properties style:width="17cm" table:align="left"/>
+    </style:style>
+  </office:automatic-styles>
+  <office:body>
+    <office:text>
+      <text:h text:outline-level="1">Rahmenliefervertrag</text:h>
+      <text:p>zwischen Selkinghaus Federn- und Stanztechnik GmbH &amp; Co. KG (Besteller)</text:p>
+      <text:p>und Rehwinkel GmbH (Lieferant)</text:p>
+      <text:p/>
+      <text:p>Basispreis: 1.480,00 EUR je Tonne, Stand 01.01.2024. Quartalsweise Anpassung nach § 3.</text:p>
+      <text:p>Laufzeit bis 31.12.2026.</text:p>
+      <text:p/>
+      <text:p>Iserlohn, 08.01.2024</text:p>
+      <text:p/>
+      <text:p>_______________________          _______________________</text:p>
+      <text:p>T. Schauerte, Einkauf            i.V. Rehwinkel GmbH</text:p>
+    </office:text>
+  </office:body>
+</office:document>

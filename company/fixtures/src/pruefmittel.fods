@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document
+  xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"
+  office:version="1.2"
+  office:mimetype="application/vnd.oasis.opendocument.spreadsheet">
+  <office:automatic-styles>
+    <style:style style:name="ta_visible" style:family="table">
+      <style:table-properties table:display="true"/>
+    </style:style>
+    <style:style style:name="ta_hidden" style:family="table">
+      <style:table-properties table:display="false"/>
+    </style:style>
+  </office:automatic-styles>
+  <office:body>
+    <office:spreadsheet>
+      <table:table table:name="Prüfmittel" table:style-name="ta_visible">
+        <table:table-column table:number-columns-repeated="5"/>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Prüfmittelnr</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Bezeichnung</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Standort</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Letzte Kalibrierung</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Nächste Kalibrierung</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>PM-001</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Messschieber 0-150 mm</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>QS-Labor</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>14.03.2025</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>14.03.2026</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>PM-002</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Bügelmessschraube 0-25 mm</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>QS-Labor</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>14.03.2025</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>14.03.2026</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>PM-004</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Federprüfmaschine FP-1</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>QS-Labor</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>02.09.2024</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>02.09.2025</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>PM-007</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Messmaschine MM-02</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>QS-Labor</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>11.11.2025</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>11.11.2026</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>PM-011</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Schichtdickenmessgerät</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Wareneingang</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>20.01.2024</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>20.01.2025</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell/><table:table-cell/><table:table-cell/><table:table-cell/><table:table-cell/></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>PM-004 und PM-011 sind überfällig. Gemeldet an QMB am 03.02.2026.</text:p></table:table-cell><table:table-cell/><table:table-cell/><table:table-cell/><table:table-cell/></table:table-row>
+      </table:table>
+    </office:spreadsheet>
+  </office:body>
+</office:document>

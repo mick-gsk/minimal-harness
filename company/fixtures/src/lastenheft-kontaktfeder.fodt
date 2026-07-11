@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document
+  xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"
+  office:version="1.2"
+  office:mimetype="application/vnd.oasis.opendocument.text">
+  <office:automatic-styles>
+    <style:style style:name="Tbl" style:family="table">
+      <style:table-properties style:width="17cm" table:align="left"/>
+    </style:style>
+  </office:automatic-styles>
+  <office:body>
+    <office:text>
+      <text:h text:outline-level="1">Lastenheft Kontaktfeder</text:h>
+      <text:p>Auftraggeber: Wittenbrink Antriebstechnik GmbH</text:p>
+      <text:p>Revision 2 — 04.09.2025</text:p>
+      <text:p/>
+      <text:h text:outline-level="2">1 Zweck</text:h>
+      <text:p>Die Kontaktfeder stellt die elektrische Verbindung im Schaltgehäuse her. Sie muss über die gesamte Lebensdauer des Antriebs eine definierte Kontaktkraft aufbringen.</text:p>
+      <text:h text:outline-level="2">2 Anforderungen</text:h>
+      <table:table table:name="T7" table:style-name="Tbl">
+        <table:table-column table:number-columns-repeated="4"/>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Nr.</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Anforderung</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Wert</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Prüfung</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>2.1</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Kontaktkraft bei Nennhub</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>2,4 N ± 0,3 N</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Federprüfmaschine</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>2.2</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Werkstoff</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>CuSn6 (2.1020)</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Werkszeugnis 2.2</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>2.3</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Oberfläche</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>elektrolytisch verzinnt, 3 µm</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Schichtdickenmessung</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>2.4</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Dauerfestigkeit</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>1 Mio. Lastwechsel</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Dauerlaufprüfung</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>2.5</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Betriebstemperatur</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>-40 °C bis +105 °C</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Klimawechseltest</text:p></table:table-cell></table:table-row>
+      </table:table>
+      <text:h text:outline-level="2">3 Mitgeltende Unterlagen</text:h>
+      <text:p>DIN EN 13906-1, DIN EN ISO 2768-m.</text:p>
+      <text:h text:outline-level="2">4 Offene Punkte</text:h>
+      <text:p>Die Dauerlaufprüfung nach 2.4 kann Selkinghaus nicht im Haus durchführen. Vergabe an ein externes Labor ist noch nicht beauftragt. (Anmerkung J. Eickhoff, 04.09.2025)</text:p>
+    </office:text>
+  </office:body>
+</office:document>

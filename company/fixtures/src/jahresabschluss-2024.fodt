@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document
+  xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"
+  office:version="1.2"
+  office:mimetype="application/vnd.oasis.opendocument.text">
+  <office:automatic-styles>
+    <style:style style:name="Tbl" style:family="table">
+      <style:table-properties style:width="17cm" table:align="left"/>
+    </style:style>
+  </office:automatic-styles>
+  <office:body>
+    <office:text>
+      <text:h text:outline-level="1">Jahresabschluss 2024 — Auszug</text:h>
+      <text:p>Selkinghaus Federn- und Stanztechnik GmbH &amp; Co. KG</text:p>
+      <text:p>Aufgestellt durch Steuerberatungskanzlei Kortmann, Iserlohn</text:p>
+      <text:p/>
+      <text:h text:outline-level="2">Gewinn- und Verlustrechnung (verkürzt)</text:h>
+      <table:table table:name="T5" table:style-name="Tbl">
+        <table:table-column table:number-columns-repeated="3"/>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Position</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>2024</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>2023</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Umsatzerlöse</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>24.180.412 EUR</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>23.104.877 EUR</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Materialaufwand</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>13.905.210 EUR</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>13.001.442 EUR</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Personalaufwand</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>7.412.883 EUR</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>7.128.014 EUR</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Abschreibungen</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>1.104.220 EUR</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>1.087.902 EUR</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Jahresüberschuss</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>612.404 EUR</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>588.311 EUR</text:p></table:table-cell></table:table-row>
+      </table:table>
+      <text:p/>
+      <text:h text:outline-level="2">Anhang, Auszug</text:h>
+      <text:p>Auf einen Kunden entfallen 28 % der Umsatzerlöse. Der Verlust dieses Kunden hätte wesentliche Auswirkungen auf die Ertragslage.</text:p>
+      <text:p>Die Gesellschaft beschäftigte im Jahresdurchschnitt 142 Arbeitnehmer.</text:p>
+    </office:text>
+  </office:body>
+</office:document>

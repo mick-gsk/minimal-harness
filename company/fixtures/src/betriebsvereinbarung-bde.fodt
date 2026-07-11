@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document
+  xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"
+  office:version="1.2"
+  office:mimetype="application/vnd.oasis.opendocument.text">
+  <office:automatic-styles>
+    <style:style style:name="Tbl" style:family="table">
+      <style:table-properties style:width="17cm" table:align="left"/>
+    </style:style>
+  </office:automatic-styles>
+  <office:body>
+    <office:text>
+      <text:h text:outline-level="1">Betriebsvereinbarung über die Betriebsdatenerfassung (BDE)</text:h>
+      <text:p>E N T W U R F — Stand 12.02.2026 — noch nicht unterzeichnet</text:p>
+      <text:p/>
+      <text:p>zwischen der Selkinghaus Federn- und Stanztechnik GmbH &amp; Co. KG, vertreten durch die Geschäftsführung,</text:p>
+      <text:p>und dem Betriebsrat, vertreten durch den Vorsitzenden.</text:p>
+      <text:p/>
+      <text:h text:outline-level="2">§ 1 Gegenstand</text:h>
+      <text:p>Diese Vereinbarung regelt die Erfassung und Auswertung von Maschinen- und Auftragsdaten aus dem BDE-System.</text:p>
+      <text:h text:outline-level="2">§ 2 Erfasste Daten</text:h>
+      <text:p>Erfasst werden Maschinennummer, Auftragsnummer, Stückzahl, Gut-/Schlechtteile, Stillstandsgründe sowie die Personalnummer des anmeldenden Mitarbeiters.</text:p>
+      <text:h text:outline-level="2">§ 3 Zweckbindung</text:h>
+      <text:p>Eine personenbezogene Leistungs- oder Verhaltenskontrolle findet nicht statt. Auswertungen erfolgen ausschließlich maschinen- und auftragsbezogen.</text:p>
+      <text:h text:outline-level="2">§ 4 Zugriff</text:h>
+      <text:p>Zugriff auf personenbezogene Rohdaten haben ausschließlich die Geschäftsführung und die Personalabteilung. Der Betriebsrat erhält auf Verlangen Einsicht.</text:p>
+      <text:h text:outline-level="2">§ 5 Inkrafttreten</text:h>
+      <text:p>Diese Vereinbarung tritt mit Unterzeichnung durch beide Seiten in Kraft.</text:p>
+      <text:p/>
+      <text:p>______________________            ______________________</text:p>
+      <text:p>Geschäftsführung                  Betriebsrat</text:p>
+      <text:p/>
+      <text:p>Anmerkung Personal (A. Kersting, 12.02.2026): Die QS wertet bereits nach § 2 aus. Bitte Unterschrift priorisieren.</text:p>
+    </office:text>
+  </office:body>
+</office:document>

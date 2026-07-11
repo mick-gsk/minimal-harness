@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document
+  xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"
+  office:version="1.2"
+  office:mimetype="application/vnd.oasis.opendocument.spreadsheet">
+  <office:automatic-styles>
+    <style:style style:name="ta_visible" style:family="table">
+      <style:table-properties table:display="true"/>
+    </style:style>
+    <style:style style:name="ta_hidden" style:family="table">
+      <style:table-properties table:display="false"/>
+    </style:style>
+  </office:automatic-styles>
+  <office:body>
+    <office:spreadsheet>
+      <table:table table:name="Maschinen" table:style-name="ta_visible">
+        <table:table-column table:number-columns-repeated="5"/>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>Inventarnr</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Typ</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Halle</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Aufgestellt</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Seriennummer</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>INV-1212</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Exzenterpresse</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Halle 1</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>12.05.2004</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>SN-448120</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>INV-1213</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Stanzautomat</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Halle 3</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>08.11.2011</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>SN-771904</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>INV-1214</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Federwindeautomat</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Halle 2</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>22.09.1999</text:p></table:table-cell><table:table-cell/></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>INV-1215</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Drahtbiegeautomat</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Halle 2</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>03.03.2016</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>SN-330417</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>INV-1216</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Kugelstrahlanlage</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>Halle 3</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>17.07.2008</text:p></table:table-cell><table:table-cell office:value-type="string"><text:p>SN-119288</text:p></table:table-cell></table:table-row>
+        <table:table-row><table:table-cell/><table:table-cell/><table:table-cell/><table:table-cell/><table:table-cell/></table:table-row>
+        <table:table-row><table:table-cell office:value-type="string"><text:p>INV-1214: Typenschild bei der Aufstellung überstrichen. Nummer bis heute nicht ermittelt.</text:p></table:table-cell><table:table-cell/><table:table-cell/><table:table-cell/><table:table-cell/></table:table-row>
+      </table:table>
+    </office:spreadsheet>
+  </office:body>
+</office:document>
