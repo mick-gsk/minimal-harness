@@ -13,6 +13,7 @@ import { dirname, join } from "node:path";
 import { readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { OllamaEmbedder } from "../../src/rag/embedder.js";
 import { SqliteKnowledgeStore } from "../../src/rag/knowledge-store.js";
+import { extractOfficeText } from "../../src/extractors/office.js";
 import { decodeSmart } from "./tools.js";
 
 const BASE_URL = process.env.OLLAMA_BASE_URL ?? "http://localhost:11434";
@@ -65,12 +66,32 @@ async function main(): Promise<void> {
   let skipped = 0;
   for (const abs of files) {
     const rel = abs.slice(CORPUS.length + 1);
-    const buf = readFileSync(abs);
-    if (buf.subarray(0, 1024).includes(0)) {
-      skipped++;
-      continue; // binary (erp.sqlite, xlsx, pdf)
+    let buf: Buffer;
+    try {
+      buf = readFileSync(abs);
+    } catch {
+      skipped++; // corpus may be regenerating while we walk
+      continue;
     }
-    const chunks = chunkText(decodeSmart(buf));
+    // Office files are indexed by their extracted text; other binaries skipped.
+    let text: string | null = null;
+    try {
+      text = extractOfficeText(rel, buf);
+    } catch {
+      text = null;
+    }
+    if (text === null) {
+      if (buf.subarray(0, 1024).includes(0)) {
+        skipped++;
+        continue; // binary (erp.sqlite, scans)
+      }
+      text = decodeSmart(buf);
+    }
+    if (text.trim().length === 0) {
+      skipped++;
+      continue;
+    }
+    const chunks = chunkText(text);
     await store.add(rel, chunks);
     indexed++;
   }
