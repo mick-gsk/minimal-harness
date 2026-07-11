@@ -297,7 +297,7 @@ systematischer Suche. Verweigerungsdisziplin des Harness: 6/6 in jeder Zelle.
 |---|---|---|
 | Recherche in Text/Mail/ERP (core) | 44–48 % | Harness-Terrain, schlägt Baseline |
 | **Nur-Binär (Office)** | **0 % → 42 %** | war per Definition unlösbar; der Extraktor öffnet die Klasse (docx-Lastenheft und PDF-Vertrag je 3/3) |
-| Systemübergreifende Joins | 0/15 (nur Verweigerung korrekt) | **Werkzeugklassen-Grenze**: 558-Zeilen-Joins brauchen Datenverarbeitung, kein Lesen — nächster Hebel: CSV-Query-Tool |
+| Systemübergreifende Joins | 0/15 → **6/15** (s. Update 2026-07-11) | war Werkzeugklassen-Grenze; `data.query` mit `erp:`/`fs:`-Quellen öffnet die Klasse |
 | llama3.1 auf binary | 0/24 | llamas Such-Beharrlichkeit reicht nicht — Office-Recherche braucht qwen-Klasse |
 
 ## Produktionspfad End-to-End (bench/company/server-e2e.ts)
@@ -308,6 +308,36 @@ Rev. C mit Quelle), Session-Isolation zwischen Usern, Approval-Gate
 fail-closed ohne Freigabekanal UND SSE-Freigabe-Flow (ERP-Kundenzahl 52 erst
 nach approval), DSGVO-Auskunft/-Löschung, Prometheus-Metriken. Auf v1 und v2
 der Firma identisch bestanden.
+
+## Update 2026-07-11: die Join-Klasse ist geöffnet (0/15 → 6/15)
+
+Das Zero-Dep-Tabellenwerkzeug `data.query` (deklaratives JSON: where/groupBy/
+aggregate/inner+anti-Join) bekam zwei zusätzliche Quellenarten: `erp:<tabelle>`
+(liest die ERP-SQLite als Tabelle) und `fs:<ordner>` (liest den Dateibestand
+als Tabelle, inkl. `pfad_win`-Spalte für Windows-Pfad-Joins). Damit sind
+Index-vs-Realität-Fragen erstmals *rechenbar*: Der Anti-Join DocuWare-
+`Ablagepfad` gegen `fs:fileserver` liefert deterministisch die 88 verwaisten
+Einträge; `fs:`-Count liefert den 1.896er-Nenner; der DATEV↔ERP-Abgleich
+läuft über `erp:rechnungen`.
+
+Messung (qwen3:8b, system-Set, 6 Fakten × 3 Seeds): **3/18 → 9/18**,
+systemübergreifende Joins **0/15 → 6/15** (s01 Orphans 2/3, s02 Anteil 2/3,
+s05 DATEV-Abgleich 2/3), Verweigerungs-Falle 3/3 gehalten. Die verbleibenden
+Fails (s03 Header-Diff über Monatsexporte, s04 Muster-Join) sind Verhaltens-,
+keine Werkzeugfälle — das Modell rät statt zu prüfen; Gegenstand des
+laufenden Scaffold-Tunings.
+
+Nebenbefund mit Prinzip-Wert: Die erste Live-Messung entlarvte einen
+Schema-Bug (`data.query` verlangte einen `{query:{…}}`-Wrapper, die
+Description-Beispiele zeigten das nackte Objekt — 8B-Modelle kopieren
+Beispiele wörtlich und wurden abgelehnt). Fix: Schema geflattet, alte Form
+toleriert (`0c8f7c6`). Lehre: **Tool-Schemas für kleine Modelle müssen
+exakt den Description-Beispielen entsprechen** — Messung vor Meinung.
+
+Zweite Beweis-Achse dokumentiert: [eu-compliance-vergleich.md](eu-compliance-vergleich.md)
+— nachprüfbare 8×8-Matrix (Audit-Kette, fail-closed Approval, DSGVO-API,
+Art.-50-Kennzeichnung) gegen smolagents/LangChain/CrewAI/OpenAI-SDK/Mastra/
+Haystack/n8n, inkl. ehrlicher Grenzen.
 
 ## Betriebs-Lehre des Tages
 
