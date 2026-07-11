@@ -1,7 +1,31 @@
 {
   "name": "minimal-harness",
   "version": "0.1.0",
-  "description": "A lean, framework-agnostic Agent Harness for local LLMs (Ollama-first)",
+  "description": "A lean, framework-agnostic Agent Harness for local LLMs (Ollama-first) — prompt-based tool calling, zero runtime dependencies.",
+  "keywords": [
+    "agent",
+    "agent-harness",
+    "llm",
+    "local-llm",
+    "ollama",
+    "tool-calling",
+    "function-calling",
+    "rag",
+    "structured-output",
+    "ai-agents",
+    "typescript",
+    "zero-dependency"
+  ],
+  "homepage": "https://github.com/mick-gsk/minimal-harness#readme",
+  "bugs": {
+    "url": "https://github.com/mick-gsk/minimal-harness/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mick-gsk/minimal-harness.git"
+  },
+  "license": "MIT",
+  "author": "Mick G. (https://github.com/mick-gsk)",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -10,6 +34,16 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     }
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsup",
@@ -22,7 +56,8 @@
     "bench": "tsx bench/runner.ts",
     "bench:probe": "npx tsx bench/probe.ts",
     "bench:ab": "npx tsx bench/ab-experiment.ts",
-    "bench:bfcl": "npx tsx bench/bfcl-experiment.ts"
+    "bench:bfcl": "npx tsx bench/bfcl-experiment.ts",
+    "prepublishOnly": "npm run build && npm test"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

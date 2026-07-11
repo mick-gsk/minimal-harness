@@ -15,3 +15,4 @@ knowledge.db-shm
 knowledge.db-wal
 results-company-v1.jsonl
 .playwright-mcp/
+.venv/
