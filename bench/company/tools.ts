@@ -6,6 +6,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { extractOfficeText } from "../../src/extractors/office.js";
 import type { ToolDefinition } from "../../src/types/tool.js";
 
 /**
@@ -35,7 +36,7 @@ export function makeFsListTool(root: string): ToolDefinition<{ path?: string }, 
   return {
     name: "fs.list",
     description:
-      "Lists a directory of the company data. Top-level folders: fileserver/ (K: drive), mail/ (e-mail archive), ad/ (Active Directory exports). Directories end with '/'.",
+      "Lists a directory of the company data. Top-level folders: fileserver/ (K: drive), mail/ (e-mail archive), ad/ (Active Directory exports), dms/ (DocuWare index), bde/ (machine data exports), datev/ (accounting batches), pdm/ (CAD index). Directories end with '/'.",
     inputSchema: {
       type: "object",
       properties: { path: { type: "string", description: "Directory path, e.g. 'fileserver/QM'. Omit for the top level." } },
@@ -55,7 +56,8 @@ export function makeFsListTool(root: string): ToolDefinition<{ path?: string }, 
 export function makeFsReadTool(root: string): ToolDefinition<{ path: string }, { content: string }> {
   return {
     name: "fs.read",
-    description: "Reads a text file from the company data (fileserver/, mail/, ad/). Not for .sqlite files — use erp.query.",
+    description:
+      "Reads a file from the company data (fileserver/, mail/, ad/, dms/, bde/, datev/, pdm/). Office files (.xlsx, .docx, .pdf) are returned as extracted text. Not for .sqlite files — use erp.query.",
     inputSchema: {
       type: "object",
       properties: { path: { type: "string", description: "File path, e.g. 'mail/2024-03-14_wittenbrink_preisabsprache.eml'" } },
@@ -65,10 +67,18 @@ export function makeFsReadTool(root: string): ToolDefinition<{ path: string }, {
     async execute(input) {
       const abs = resolveInside(root, input.path);
       const buf = readFileSync(abs);
-      if (buf.subarray(0, 1024).includes(0)) {
+      let text: string;
+      const office = extractOfficeText(input.path, buf);
+      if (office !== null) {
+        if (office.trim().length === 0) {
+          throw new Error(`no text layer in ${input.path} — likely a scan; OCR is not available`);
+        }
+        text = office;
+      } else if (buf.subarray(0, 1024).includes(0)) {
         throw new Error(`binary file — not readable as text: ${input.path}`);
+      } else {
+        text = decodeSmart(buf);
       }
-      const text = decodeSmart(buf);
       return {
         content: text.length > MAX_READ_CHARS ? `${text.slice(0, MAX_READ_CHARS)}\n[... truncated]` : text,
       };
@@ -98,7 +108,7 @@ export function makeFsSearchTool(root: string): ToolDefinition<{ query: string; 
   return {
     name: "fs.search",
     description:
-      "Full-text search across the company files (fileserver/, mail/, ad/) — like the search box on the fileserver. Case-insensitive substring match against file names and file contents; returns 'path:line: excerpt'. Use this to locate documents before reading them.",
+      "Full-text search across ALL company files (fileserver/, mail/, ad/, dms/, bde/, datev/, pdm/), including the text inside .xlsx/.docx/.pdf — like the search box on the fileserver. Case-insensitive; multiple terms are AND-combined per file; returns 'path:line: excerpt'. Use this to locate documents before reading them.",
     inputSchema: {
       type: "object",
       properties: {
@@ -121,7 +131,14 @@ export function makeFsSearchTool(root: string): ToolDefinition<{ query: string; 
         if (matches.length >= MAX_SEARCH_MATCHES) break;
         const relLower = rel.toLowerCase();
         const buf = readFileSync(join(root, rel));
-        const text = buf.subarray(0, 1024).includes(0) ? "" : decodeSmart(buf); // binary: filename only
+        // Office files are searched by their extracted text — like the real
+        // Windows search does. Other binaries: filename only.
+        let text: string;
+        try {
+          text = extractOfficeText(rel, buf) ?? (buf.subarray(0, 1024).includes(0) ? "" : decodeSmart(buf));
+        } catch {
+          text = "";
+        }
         const haystack = relLower + "\n" + text.toLowerCase();
         if (!terms.every((t) => haystack.includes(t))) continue;
         if (terms.some((t) => relLower.includes(t)) || text === "") {
@@ -152,7 +169,7 @@ export function makeErpQueryTool(dbPath: string): ToolDefinition<{ sql: string }
   return {
     name: "erp.query",
     description:
-      "Runs a read-only SQL SELECT against the live ERP database (SQLite). Tables: kunden, lieferanten, artikel, auftraege, maschinen, wartung, mitarbeiter. Discover columns via: SELECT name FROM pragma_table_info('artikel').",
+      "Runs a read-only SQL SELECT against the live ERP database (SQLite). Tables: kunden, lieferanten, artikel, auftraege, rechnungen, lieferscheine, werkzeuge, maschinen, wartung, mitarbeiter. Discover columns via: SELECT name FROM pragma_table_info('artikel').",
     inputSchema: {
       type: "object",
       properties: { sql: { type: "string", description: "A single SELECT statement." } },
