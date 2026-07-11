@@ -7,6 +7,13 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { extractOfficeText } from "../../src/extractors/office.js";
+import {
+  formatQueryResult,
+  parseCsv,
+  runQuery,
+  type Table,
+  type TableQuery,
+} from "../../src/tools/table-query.js";
 import type { ToolDefinition } from "../../src/types/tool.js";
 
 /**
@@ -193,6 +200,62 @@ export function makeErpQueryTool(dbPath: string): ToolDefinition<{ sql: string }
   };
 }
 
+/**
+ * Structured querying over the CSV exports scattered across the corpus
+ * (dms/, erp/, ad/, bde/, ...). Small models cannot join/aggregate 500-row
+ * tables in their head; this gives them a deterministic data tool. Not SQL —
+ * a small JSON shape that 8B models emit reliably. The `anti` join is the point:
+ * it answers "missing in" / "orphaned" questions.
+ */
+export function makeDataQueryTool(root: string): ToolDefinition<{ query: TableQuery }, { result: string }> {
+  // Parse each CSV at most once per tool call; join queries touch two files.
+  const cache = new Map<string, Table>();
+  const load = (file: string): Table => {
+    if (typeof file !== "string" || file.length === 0) throw new Error("query.file must be a corpus-relative .csv path");
+    const abs = resolveInside(root, file); // refuses paths escaping the corpus (truth/ is outside it)
+    if (!/\.csv$/i.test(abs)) throw new Error(`only .csv files can be queried: ${file}`);
+    let table = cache.get(abs);
+    if (!table) {
+      table = parseCsv(decodeSmart(readFileSync(abs)));
+      cache.set(abs, table);
+    }
+    return table;
+  };
+  return {
+    name: "data.query",
+    description:
+      "Runs a structured query over a CSV export in the corpus (dms/, erp/, ad/, bde/, datev/, pdm/). " +
+      "Use this instead of fs.read for counting, filtering, grouping and JOINING rows across CSVs — small models cannot do this by reading. " +
+      "Query shape (JSON): {file, select?, where?:[{col,op,value}], groupBy?, aggregate?:[{fn,col?}], join?:{file,leftCol,rightCol,type}, limit?}. " +
+      "op ∈ ==,!=,>,<,>=,<=,contains,in (numbers understand German decimal commas). fn ∈ count,sum,avg,min,max. join.type ∈ inner,anti. " +
+      "The 'anti' join returns left rows with NO match on the right — use it for 'orphaned' / 'points at something that does not exist' questions. " +
+      "Result is a compact text table with a row count. Unknown columns return the list of available columns. Examples: " +
+      '(1) count articles per material: {"file":"erp/export_2019.csv","groupBy":["Werkstoff"]}. ' +
+      '(2) articles above 5 EUR: {"file":"erp/export_2019.csv","where":[{"col":"Listenpreis EUR","op":">","value":5}],"select":["Artikelnr","Listenpreis EUR"]}. ' +
+      '(3) DocuWare entries whose creator no longer exists in Active Directory (anti-join): ' +
+      '{"file":"dms/docuware-index.csv","join":{"file":"ad/users.csv","leftCol":"Erfasst durch","rightCol":"SamAccountName","type":"anti"},"aggregate":[{"fn":"count"}]}.',
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "object",
+          description:
+            'The query object, e.g. {"file":"dms/docuware-index.csv","groupBy":["Dokumenttyp"]}. "file" is required and must be a corpus-relative .csv path.',
+        },
+      },
+      required: ["query"],
+      additionalProperties: false,
+    },
+    async execute(input) {
+      const q = input.query;
+      if (!q || typeof q !== "object" || typeof q.file !== "string") {
+        throw new Error('query must be an object with a "file" (corpus-relative .csv path)');
+      }
+      return { result: formatQueryResult(runQuery(q, load)) };
+    },
+  };
+}
+
 export function makeCompanyTools(corpusRoot: string): ToolDefinition[] {
   const root = resolve(corpusRoot);
   return [
@@ -200,5 +263,6 @@ export function makeCompanyTools(corpusRoot: string): ToolDefinition[] {
     makeFsReadTool(root),
     makeFsSearchTool(root),
     makeErpQueryTool(join(root, "erp", "erp.sqlite")),
+    makeDataQueryTool(root),
   ] as ToolDefinition[];
 }
