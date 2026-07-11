@@ -8,8 +8,11 @@ import { DefaultToolBridge } from "../tools/tool-bridge.js";
 import type { LLMAdapter } from "../types/llm.js";
 import type { Memory } from "../types/memory.js";
 import type { ToolDefinition, ToolInputSchema } from "../types/tool.js";
+import type { ToolBridge } from "../types/tool.js";
 import { logger } from "../utils/logger.js";
 import { ApiKeyAuth } from "./auth.js";
+import { AuditLog } from "../audit/audit-log.js";
+import { withAudit, type AuditContext } from "../audit/with-audit.js";
 
 export interface AgentServerOptions {
   llm: LLMAdapter;
@@ -31,7 +34,25 @@ export interface AgentServerOptions {
   requireApproval?: string[];
   /** How long an approval may stay unanswered before it is denied. Default 120s. */
   approvalTimeoutMs?: number;
+  /**
+   * Path to a SQLite file for the revision-safe, hash-chained audit log
+   * (AI Act Art. 12/19/26(6), NIS2). When set, every run is audited
+   * (run_start/tool_call/tool_result/approval/final_answer/run_end) and
+   * GET /v1/audit/verify becomes available.
+   */
+  auditDb?: string;
+  /**
+   * AI transparency labelling (AI Act Art. 50, mandatory from 08/2026).
+   * Adds `aiGenerated: true` + `X-AI-Generated` header to answer responses and,
+   * on a session's first turn, a human-readable `disclosure` field. Default: on
+   * (opt-out via `aiDisclosure: false`). Never written into the model's answer
+   * text — response metadata only, so benchmarks stay unaffected.
+   */
+  aiDisclosure?: boolean;
 }
+
+/** Human-readable disclosure per Art. 50(1) — surfaced once per session. */
+const DISCLOSURE_TEXT = "Diese Antwort wurde von einem KI-System erstellt und kann Fehler enthalten.";
 
 interface RunRequest {
   sessionId: string;
@@ -98,16 +119,36 @@ export function createAgentServer(options: AgentServerOptions): Server {
   const approvalTimeoutMs = options.approvalTimeoutMs ?? 120_000;
   const pendingApprovals = new Map<string, { userId: string; resolve: (ok: boolean) => void }>();
 
+  const auditLog = options.auditDb ? new AuditLog(options.auditDb) : undefined;
+  const aiDisclosure = options.aiDisclosure ?? true;
+
+  // Per-request tool bridge whose tools log every call+result into the audit
+  // chain (the shared bridge stays untouched, so non-audited runs are unchanged).
+  function auditedBridge(ctx: AuditContext): ToolBridge {
+    const bridge = new DefaultToolBridge();
+    for (const tool of withAudit(options.tools, auditLog!, ctx)) bridge.register(tool);
+    return bridge;
+  }
+
+  // Wraps a base approval callback so approve/deny decisions are also audited.
+  type ApprovalFn = (call: { name: string; arguments: unknown }) => Promise<boolean>;
+  function auditApproval(base: ApprovalFn | undefined, ctx: AuditContext): ApprovalFn | undefined {
+    if (!auditLog || !base) return base;
+    return async (call) => {
+      const approved = await base(call);
+      auditLog.append({ ...ctx, event: "approval", payload: { tool: call.name, approved } });
+      return approved;
+    };
+  }
+
   // The loop is stateless (per-session state lives in memory), but the
   // approval hook is per-request in streaming mode — so we build loops on
   // demand and share everything else.
-  function buildLoop(
-    onToolApproval?: (call: { name: string; arguments: unknown }) => Promise<boolean>,
-  ): DefaultAgentLoop {
+  function buildLoop(onToolApproval?: ApprovalFn, bridge: ToolBridge = toolBridge): DefaultAgentLoop {
     return new DefaultAgentLoop({
       llm: options.llm,
       memory: options.memory,
-      toolBridge,
+      toolBridge: bridge,
       validator: new StructuredOutputValidator(),
       promptBuilder: new DefaultPromptBuilder(),
       ...(options.systemInstruction !== undefined ? { systemInstruction: options.systemInstruction } : {}),
@@ -156,6 +197,16 @@ export function createAgentServer(options: AgentServerOptions): Server {
       return handleSessions(req, res);
     }
 
+    // Audit-chain integrity check (AI Act Art. 12/19). Authenticated users only.
+    if (req.url === "/v1/audit/verify") {
+      if (req.method !== "GET") return sendJson(res, 405, { error: "method not allowed" });
+      const userId = auth.resolveUser(req.headers.authorization);
+      if (!userId) return sendJson(res, 401, { error: "invalid or missing API key" });
+      if (!auditLog) return sendJson(res, 501, { error: "audit log is not enabled (set auditDb / AUDIT_DB)" });
+      const result = auditLog.verifyChain();
+      return sendJson(res, 200, { ...result, events: auditLog.countEvents() });
+    }
+
     if (req.url?.startsWith("/v1/agent/approvals/")) {
       if (req.method !== "POST") return sendJson(res, 405, { error: "method not allowed" });
       const userId = auth.resolveUser(req.headers.authorization);
@@ -201,23 +252,51 @@ export function createAgentServer(options: AgentServerOptions): Server {
 
       if (body.stream === true) return runStreaming(res, userId, sessionId, body.message, maxTurns);
 
+      const ctx: AuditContext = { userId, sessionId };
+      // First turn (before this run writes to memory) → disclosure per Art. 50.
+      const firstTurn = aiDisclosure ? (await options.memory.get(sessionId)).messages.length === 0 : false;
+
+      let runLoop = loop;
+      if (auditLog) {
+        auditLog.append({ ...ctx, event: "run_start", payload: { maxTurns } });
+        const base = requireApproval.size > 0 ? async (call: { name: string }) => !requireApproval.has(call.name) : undefined;
+        runLoop = buildLoop(auditApproval(base, ctx), auditedBridge(ctx));
+      }
+
       const startedAt = Date.now();
       try {
-        const result = await loop.run({
+        const result = await runLoop.run({
           sessionId,
           userMessage: body.message,
           maxTurns,
           ...(body.responseSchema ? { responseSchema: body.responseSchema } : {}),
         });
+        if (auditLog) {
+          auditLog.append({ ...ctx, event: "final_answer", payload: { finalAnswer: result.finalAnswer } });
+          auditLog.append({
+            ...ctx,
+            event: "run_end",
+            payload: { terminatedReason: result.terminatedReason, turns: result.rawTurns.length, toolCalls: result.toolTrace.length },
+          });
+        }
         recordRun(userId, sessionId, result.terminatedReason, startedAt, result.rawTurns.length, result.toolTrace.length);
-        return sendJson(res, 200, {
-          finalAnswer: result.finalAnswer,
-          ...(result.structuredAnswer !== undefined ? { structuredAnswer: result.structuredAnswer } : {}),
-          terminatedReason: result.terminatedReason,
-          turns: result.rawTurns.length,
-          toolCallCount: result.toolTrace.length,
-        });
+        return sendJson(
+          res,
+          200,
+          {
+            finalAnswer: result.finalAnswer,
+            ...(result.structuredAnswer !== undefined ? { structuredAnswer: result.structuredAnswer } : {}),
+            terminatedReason: result.terminatedReason,
+            turns: result.rawTurns.length,
+            toolCallCount: result.toolTrace.length,
+            ...(aiDisclosure ? { aiGenerated: true, ...(firstTurn ? { disclosure: DISCLOSURE_TEXT } : {}) } : {}),
+          },
+          aiDisclosure ? { "X-AI-Generated": "true" } : undefined,
+        );
       } catch (err) {
+        if (auditLog) {
+          auditLog.append({ ...ctx, event: "run_end", payload: { terminatedReason: "error", error: err instanceof Error ? err.message : String(err) } });
+        }
         recordRun(userId, sessionId, "error", startedAt, 0, 0);
         return sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
       }
@@ -288,10 +367,13 @@ export function createAgentServer(options: AgentServerOptions): Server {
     maxTurns: number,
   ): Promise<void> {
     const startedAt = Date.now();
+    const ctx: AuditContext = { userId, sessionId };
+    const firstTurn = aiDisclosure ? (await options.memory.get(sessionId)).messages.length === 0 : false;
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
+      ...(aiDisclosure ? { "X-AI-Generated": "true" } : {}),
     });
     const send = (event: string, data: unknown): void => {
       res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -300,9 +382,9 @@ export function createAgentServer(options: AgentServerOptions): Server {
     // Streaming has a live channel to the human: gated tools emit an
     // approval_request event and wait for POST /v1/agent/approvals/{id}.
     // No answer within approvalTimeoutMs denies fail-closed.
-    const requestLoop =
+    const streamApproval: ApprovalFn | undefined =
       requireApproval.size > 0
-        ? buildLoop(async (call) => {
+        ? async (call) => {
             if (!requireApproval.has(call.name)) return true;
             const approvalId = randomUUID();
             return new Promise<boolean>((resolve) => {
@@ -320,8 +402,16 @@ export function createAgentServer(options: AgentServerOptions): Server {
               });
               send("approval_request", { approvalId, tool: call.name, arguments: call.arguments });
             });
-          })
-        : loop;
+          }
+        : undefined;
+
+    if (auditLog) auditLog.append({ ...ctx, event: "run_start", payload: { maxTurns } });
+    const requestLoop =
+      auditLog !== undefined
+        ? buildLoop(auditApproval(streamApproval, ctx), auditedBridge(ctx))
+        : streamApproval
+          ? buildLoop(streamApproval)
+          : loop;
 
     try {
       const result = await requestLoop.run({
@@ -330,14 +420,26 @@ export function createAgentServer(options: AgentServerOptions): Server {
         maxTurns,
         onToken: (chunk) => send("token", { chunk }),
       });
+      if (auditLog) {
+        auditLog.append({ ...ctx, event: "final_answer", payload: { finalAnswer: result.finalAnswer } });
+        auditLog.append({
+          ...ctx,
+          event: "run_end",
+          payload: { terminatedReason: result.terminatedReason, turns: result.rawTurns.length, toolCalls: result.toolTrace.length },
+        });
+      }
       recordRun(userId, sessionId, result.terminatedReason, startedAt, result.rawTurns.length, result.toolTrace.length);
       send("result", {
         finalAnswer: result.finalAnswer,
         terminatedReason: result.terminatedReason,
         turns: result.rawTurns.length,
         toolCallCount: result.toolTrace.length,
+        ...(aiDisclosure ? { aiGenerated: true, ...(firstTurn ? { disclosure: DISCLOSURE_TEXT } : {}) } : {}),
       });
     } catch (err) {
+      if (auditLog) {
+        auditLog.append({ ...ctx, event: "run_end", payload: { terminatedReason: "error", error: err instanceof Error ? err.message : String(err) } });
+      }
       recordRun(userId, sessionId, "error", startedAt, 0, 0);
       send("error", { error: err instanceof Error ? err.message : String(err) });
     }
@@ -345,8 +447,8 @@ export function createAgentServer(options: AgentServerOptions): Server {
   }
 }
 
-function sendJson(res: ServerResponse, status: number, payload: unknown): void {
-  res.writeHead(status, { "Content-Type": "application/json" });
+function sendJson(res: ServerResponse, status: number, payload: unknown, headers?: Record<string, string>): void {
+  res.writeHead(status, { "Content-Type": "application/json", ...(headers ?? {}) });
   res.end(JSON.stringify(payload));
 }
 

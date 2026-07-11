@@ -61,6 +61,8 @@ Modelle einmalig laden: `docker compose exec ollama ollama pull qwen3:8b`
 | `EMBED_MODEL` | nein | snowflake-arctic-embed2 | Embedding-Modell (multilingual & stabil, s. Validierung) |
 | `REQUIRE_APPROVAL` | nein | — | Tools mit Human-in-the-Loop-Freigabe |
 | `SYSTEM_INSTRUCTION` | nein | — | eigener System-Prompt |
+| `AUDIT_DB` | nein | — | SQLite-Datei; aktiviert das revisionssichere Audit-Log (Art. 12/19) |
+| `AI_DISCLOSURE` | nein | `true` | KI-Kennzeichnung der Antworten (Art. 50); `false` deaktiviert sie |
 
 ## Hardware-Planung (VRAM)
 
@@ -93,6 +95,22 @@ alles, was über die OpenAI-kompatible `/v1`-API kommt, erbt den Server-Default.
   Container).
 - **DSGVO:** Auskunft über `GET /v1/sessions/{id}`, Löschung über
   `DELETE /v1/sessions/{id}` — pro User nur die eigenen Sessions.
+- **Audit-Log (AI Act Art. 12/19/26(6), NIS2):** Mit gesetztem `AUDIT_DB` wird
+  jeder Run hash-verkettet und append-only protokolliert (`run_start`,
+  `tool_call`, `tool_result`, `approval`, `final_answer`, `run_end`). Jede Zeile
+  trägt den Hash der Vorgängerzeile — Manipulation oder Löschung bricht die Kette
+  nachweisbar. `GET /v1/audit/verify` (authentifiziert) prüft die Integrität und
+  liefert `{ok, brokenAtSeq?, events}`. Große `tool_result`-Payloads werden mit
+  Kürzungsvermerk gekappt. **Retention:** Standard-Untergrenze 186 Tage
+  (Art. 26(6): mind. 6 Monate); `pruneOlderThan(days)` löscht nur ein
+  zusammenhängendes Präfix und speichert einen Checkpoint-Hash, sodass
+  `verifyChain` ab dem Löschpunkt lückenlos weiterprüft. Die `AUDIT_DB`-Datei wie
+  die übrigen SQLite-Dateien in `/data` sichern.
+- **KI-Kennzeichnung (AI Act Art. 50, Pflicht ab 08/2026):** Standardmäßig aktiv
+  (`AI_DISCLOSURE=false` deaktiviert). Jede Antwort trägt `aiGenerated: true` im
+  JSON-Body plus Header `X-AI-Generated: true`; der erste Turn einer Session
+  enthält zusätzlich ein menschenlesbares `disclosure`-Feld. Der Hinweis steht
+  nur in den Response-Metadaten, nie im Antworttext des Modells.
 - **Reverse-Proxy:** TLS-Terminierung + Rate-Limit davor; den Agenten-Port nur
   auf localhost/internem Netz binden (Beispiele oben binden 127.0.0.1).
 

@@ -10,6 +10,8 @@
  *   EMBED_MODEL       default snowflake-arctic-embed2 (multilingual, stable)
  *   REQUIRE_APPROVAL  optional, comma-separated tool names needing approval
  *   SYSTEM_INSTRUCTION optional system prompt override
+ *   AUDIT_DB          optional — enables the hash-chained audit log (Art. 12/19)
+ *   AI_DISCLOSURE     default on — AI labelling per Art. 50; "false" opts out
  *
  * Built to dist/server-main.js — the Docker image runs plain node, no tsx.
  */
@@ -49,6 +51,9 @@ const server = createAgentServer({
   apiKeys,
   ...(requireApproval.length > 0 ? { requireApproval } : {}),
   ...(process.env.SYSTEM_INSTRUCTION ? { systemInstruction: process.env.SYSTEM_INSTRUCTION } : {}),
+  ...(process.env.AUDIT_DB ? { auditDb: process.env.AUDIT_DB } : {}),
+  // Art. 50 disclosure defaults on; opt out explicitly with AI_DISCLOSURE=false.
+  ...(process.env.AI_DISCLOSURE !== undefined ? { aiDisclosure: process.env.AI_DISCLOSURE !== "false" } : {}),
 });
 
 server.listen(port, () => {

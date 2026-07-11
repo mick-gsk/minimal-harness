@@ -46,6 +46,19 @@ export { createAgentServer } from "./server/agent-server.js";
 export type { AgentServerOptions } from "./server/agent-server.js";
 export { ApiKeyAuth } from "./server/auth.js";
 
+// Compliance — audit log (AI Act Art. 12/19/26(6), NIS2) + AI disclosure (Art. 50)
+export { AuditLog, DEFAULT_RETENTION_DAYS } from "./audit/audit-log.js";
+export type {
+  AuditEventType,
+  AuditEventInput,
+  AuditRow,
+  VerifyResult,
+  AuditExportFilter,
+  AuditLogOptions,
+} from "./audit/audit-log.js";
+export { withAudit } from "./audit/with-audit.js";
+export type { AuditContext } from "./audit/with-audit.js";
+
 // Types
 export type { AgentLoop, AgentLoopInput, AgentLoopResult, AgentTurn } from "./types/agent.js";
 export type { Memory, MemoryRecord, MemoryState } from "./types/memory.js";
