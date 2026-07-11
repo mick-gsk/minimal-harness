@@ -75,6 +75,13 @@ braucht 20,6 GB → 24 % laufen auf der CPU, ~6× langsamer. Für 14B-Recherche-
 Agenten entweder ≥24 GB VRAM einplanen oder `OLLAMA_NUM_PARALLEL=1` setzen
 (der KV-Cache skaliert mit den parallelen Slots).
 
+**`OLLAMA_CONTEXT_LENGTH` gehört in die Dienst-Konfiguration, nicht in eine
+Shell-Session.** Nach einem Ollama-Neustart ohne dieses Setting lädt qwen3 mit
+seinem Modell-Default von 40.960 Tokens: gemessen 30,6 GB Bedarf auf der
+16-GB-Karte → 49 % CPU-Spill → GPU ~8 % ausgelastet, Läufe 5–10× langsamer.
+Der Harness-eigene `numCtx` (pro Request) schützt nur direkte Ollama-Clients;
+alles, was über die OpenAI-kompatible `/v1`-API kommt, erbt den Server-Default.
+
 ## Betrieb
 
 - **Monitoring:** `GET /metrics` (Prometheus) — Requests, Laufzeiten,

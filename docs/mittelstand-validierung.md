@@ -256,3 +256,65 @@ in docs/deployment.md.
 **Nächste Hebel (definiert, nicht begonnen):** (1) Persistenz-Scaffold als
 opt-in Loop-Feature (die smolagents-Lücke), (2) qwen3:14b via
 NUM_PARALLEL=1, (3) smolagents-Vergleich auf llama vervollständigen.
+
+---
+
+# Demo-Firma v2: Produktionsreife auf realistischer Skala (2026-07-11)
+
+Die Demo-Firma wurde auf realistische Größe ausgebaut: **2.169 Dateien,
+7 Systeme** (Fileserver 1.896 Dateien, 256 Mails, AD, DocuWare-DMS-Index,
+BDE-Maschinendaten, DATEV-Buchungsstapel, PDM/CAD-Index; ERP mit 10 Tabellen
+und 941 Aufträgen) — plus zwei neue Wahrheits-Sets: **system-facts** (Joins
+über Systemgrenzen) und **binary-facts** (Antworten, die ausschließlich in
+xlsx/docx/pdf existieren).
+
+## Neuer Baustein: Zero-Dependency-Office-Extraktion
+
+Deutsches Mittelstands-Wissen lebt in Office-Dateien. `src/extractors/office.ts`
+liest xlsx/docx (ZIP+OOXML über `node:zlib`) und PDF-Textlayer (Glyph-Codes
+subsetted Fonts über die /ToUnicode-CMaps aufgelöst) — **ohne Dependency,
+`dependencies: {}` bleibt**. `fs.read` liefert Office-Text, `fs.search`
+durchsucht ihn (≈50 ms über 2.169 Dateien). Scans ohne Textlayer bleiben
+bewusst leer (kein OCR — die s06-Falle bestätigt genau das). 20/24
+Office-Dateien des Korpus extrahieren sauber; Office-Lock-Dateien (`~$…`)
+werden korrekt abgewiesen.
+
+## Kern-Kampagne v2 (16 Fakten × 3 Seeds, Prompt v3 = 7 Systeme)
+
+| Arm | qwen3:8b | llama3.1 |
+|---|---|---|
+| **Harness (verify bzw. @nt)** | **44–48 %** | **44 %** |
+| ollama-native (Baseline) | 40 % (tribal 0/6) | — |
+
+Die Skalierung von 148 auf 2.169 Dateien kostet das Harness **nichts**
+(v1: 48–50 %); die naive Baseline verliert die Tribal-Knowledge-Fragen
+komplett — in der großen Firma findet man Mail-Nadeln nur noch mit
+systematischer Suche. Verweigerungsdisziplin des Harness: 6/6 in jeder Zelle.
+
+## Die drei Fähigkeitsklassen (gemessen, qwen3:8b + Harness)
+
+| Fragenklasse | Ergebnis | Bedeutung |
+|---|---|---|
+| Recherche in Text/Mail/ERP (core) | 44–48 % | Harness-Terrain, schlägt Baseline |
+| **Nur-Binär (Office)** | **0 % → 42 %** | war per Definition unlösbar; der Extraktor öffnet die Klasse (docx-Lastenheft und PDF-Vertrag je 3/3) |
+| Systemübergreifende Joins | 0/15 (nur Verweigerung korrekt) | **Werkzeugklassen-Grenze**: 558-Zeilen-Joins brauchen Datenverarbeitung, kein Lesen — nächster Hebel: CSV-Query-Tool |
+| llama3.1 auf binary | 0/24 | llamas Such-Beharrlichkeit reicht nicht — Office-Recherche braucht qwen-Klasse |
+
+## Produktionspfad End-to-End (bench/company/server-e2e.ts)
+
+Der echte Server-Stack (`createAgentServer`) gegen die Demo-Firma: **14/14
+deterministische Checks** — Auth (401), echte Recherche über HTTP (AA-032 →
+Rev. C mit Quelle), Session-Isolation zwischen Usern, Approval-Gate
+fail-closed ohne Freigabekanal UND SSE-Freigabe-Flow (ERP-Kundenzahl 52 erst
+nach approval), DSGVO-Auskunft/-Löschung, Prometheus-Metriken. Auf v1 und v2
+der Firma identisch bestanden.
+
+## Betriebs-Lehre des Tages
+
+Ein Ollama-Neustart ohne `OLLAMA_CONTEXT_LENGTH` lädt qwen3 mit seinem
+Modell-Default **40.960** → 30,6 GB → 49 % CPU-Spill → GPU ~8 % ausgelastet,
+Läufe 5–10× langsamer. Direkte Harness-Requests sind durch `numCtx` pro
+Request geschützt; /v1-Clients ohne num_ctx (z. B. smolagents) erben den
+Server-Default. Für den Betrieb heißt das: `OLLAMA_CONTEXT_LENGTH` gehört in
+die Server-Konfiguration (systemd/Task-Scheduler), nicht in eine Shell-Session
+— dokumentiert in docs/deployment.md.
