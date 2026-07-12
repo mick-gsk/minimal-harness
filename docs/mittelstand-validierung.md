@@ -348,3 +348,148 @@ Request geschützt; /v1-Clients ohne num_ctx (z. B. smolagents) erben den
 Server-Default. Für den Betrieb heißt das: `OLLAMA_CONTEXT_LENGTH` gehört in
 die Server-Konfiguration (systemd/Task-Scheduler), nicht in eine Shell-Session
 — dokumentiert in docs/deployment.md.
+
+---
+
+# Demo-Firma v2 — Kampagne Tag 2 (2026-07-11/12): Werkzeuge öffnen Klassen, Loops nicht
+
+Zweiter Kampagnentag auf Firma v2 (2.169 Dateien, 7 Systeme). Alle Zahlen
+qwen3:8b, Kern-Set 16 Fakten × 3 Seeds (n=48/Zelle), deterministisch gescored,
+volle Antworten als Evidenz in `bench/company/results.jsonl` (offline
+reproduzierbar per `rescore.ts`, last-wins-Dedupe über
+`model|harness|think|prompt|seed|factId`). Die Leitfrage des Tages, empirisch
+beantwortet: **Ein deklaratives Werkzeug öffnet eine ganze Fragenklasse; ein
+zusätzlicher Loop-Scaffold tut das auf qwen nicht.**
+
+## Kern-Recherche: RAG + Verifier ist der neue Bestwert (54 %)
+
+`knowledge.search` (snowflake-arctic-embed2, 2.813 Chunks) als Retrieval-Arm,
+kombiniert mit `verifyFinalAnswer` (deterministischer Re-Check). pass@1 über
+16 Fakten × 3 Seeds:
+
+| Arm | pass@1 | Verweigerung (f08/f09) |
+|---|---|---|
+| ollama-native (Baseline) | 19/48 (40 %) | 6/6 |
+| minimal@verify | 21/48 (44 %) | 6/6 |
+| minimal@rag | 24/48 (**50 %**) | 5/6 |
+| **minimal@rag+verify** | **26/48 (54 %)** | **6/6** |
+
+54 % ist der bisher höchste gemessene qwen-Wert auf dem Kern-Set und übertrifft
+die native Baseline um +14 pp. Der Verifier holt gegenüber reinem RAG die
+Verweigerungsdisziplin auf 6/6 zurück (rag allein kippt eine Falle auf 5/6) —
+Retrieval bringt mehr Treffer, der Re-Check verhindert, dass die zusätzliche
+Kontextmenge zu einer Halluzination auf den unbeantwortbaren Fragen führt.
+
+## Die Join-Klasse: das Werkzeug, nicht der Loop, öffnet sie (0/15 → 6/15)
+
+`data.query` (Zero-Dep-Tabellen-Engine, deklaratives JSON: where/groupBy/
+aggregate/inner+anti-Join) durchlief drei Messstufen auf dem system-Set
+(6 Fakten × 3 Seeds; davon 5 Join-Fakten × 3 = 15, plus eine
+Verweigerungs-Falle s06 × 3):
+
+| Werkzeug-Stufe | systemübergreifende Joins |
+|---|---|
+| ohne data.query (minimal@verify) | 0/15 |
+| data.query nur CSV-Quellen | 0/15 |
+| data.query mit `erp:`/`fs:`-Quellen | **6/15** (s01 2/3, s02 2/3, s05 2/3) |
+
+Erst die zwei zusätzlichen Quellenarten machen Index-vs-Realität *rechenbar*:
+`s01` (88 verwaiste DocuWare-Einträge) fällt aus dem Anti-Join von
+DocuWare-`Ablagepfad` gegen `fs:fileserver`; `s05` aus dem DATEV↔ERP-Abgleich
+über `erp:rechnungen` (387 = 387). Das Werkzeug selbst ist **deterministisch
+verifiziert** — der Anti-Join liefert auf den echten Daten exakt 88 Orphans,
+unabhängig vom Modell. Die verbleibenden Fails sind **Verhaltens-, keine
+Werkzeugfälle**: `s03` (Header-Diff über Monatsexporte) und `s04` (Muster-Join)
+scheitern, weil das Modell rät statt die Query zu bauen — nicht, weil das
+Werkzeug die Frage nicht rechnen könnte.
+
+Laufende Zelle (Teilergebnis, in results.jsonl): `minimal@rag+verify` auf dem
+system-Set reproduziert `s01` auf **3/3** Seeds (Orphan-Anti-Join), `s02` 0/3,
+`s03` 0/1 — `s04`–`s06` stehen noch aus. Der Retrieval-Arm bricht den
+Werkzeug-Zugang zu den Joins also nicht, die Zelle ist aber noch unvollständig
+und wird bei Abschluss nachgetragen.
+
+## Scaffold-Kapitel: ein ehrliches Negativ-Ergebnis auf qwen
+
+Der Persistenz-Scaffold (plan→execute→verify→recover mit `final_answer`-Gate,
+die smolagents-Mechanik als opt-in Loop-Feature) sollte die Recherche-Ausdauer
+heben. Gemessen:
+
+| Arm | Kern-pass@1 | Einordnung |
+|---|---|---|
+| minimal@verify | 21/48 (44 %) | Referenz |
+| **minimal@scaffold (qwen)** | **19/48 (40 %)** | **unter verify** (zweimal repliziert, auch getuned) |
+| minimal@scaffold (llama, think=false) | 17/48 (35 %) | heilt den Meta-Plan-Kollaps (13 % → 35 %, +22 pp) |
+| minimal@nt (llama) | 21/48 (44 %) | bleibt vorn |
+
+Auf qwen liegt der Scaffold **unter** dem simplen Verifier — der zusätzliche
+Loop kauft keine Genauigkeit, er kostet sie (bestätigt die Roadmap-Warnung
+„nicht-monoton — halbe Scaffolds schaden"). Der eine Ort, wo er trägt: llama
+im Text-Protokoll, dessen bekannter Meta-Plan-Kollaps (13 %, „empfehle ich
+folgende Schritte…" statt zu handeln) durch das `final_answer`-Gate auf 35 %
+geheilt wird — aber llamas nativer Tool-Calling-Pfad (`@nt`, 40–44 %) bleibt
+auch damit vorn. **Einordnung: Scaffold ist eine Nische für Backends ohne
+natives Tool-Calling; der Default bleibt `verify` bzw. `rag+verify`.**
+(Nebenbefund: llama@scaffold mit think=true fällt auf 0/48 — der Denk-Modus
+kollidiert bei llama mit dem Scaffold-Protokoll.)
+
+## Kontext-Kompression: zweites Negativ-Ergebnis → Budget-Gate-Fix
+
+Always-on-Kürzung der Tool-Ergebnisse/History fiel auf **10/48 (21 %)** —
+gegenüber 44–48 % (verify) ist das **messbar schädlich**: auf dem Kern-Set ohne
+Kontext-Überlauf entfernt die Kompression Belege, die das Modell noch braucht.
+Konsequenz (Fix `1134fb8`): Die Kompression ist jetzt **vollständig
+budget-gated** — unterhalb des Budgets byte-identisch, sie greift nur bei echtem
+Überlauf. Auf dem Kern-Set (kein Überlauf) ist damit kein Nutzen zu erwarten;
+das Feature bleibt bewusst erhalten für reale Long-Context-Szenarien
+(tribal/binary-Recherchen mit vielen langen Reads).
+
+## Zwei Fixes aus der Live-Messung (Muster: kleine Modelle kopieren wörtlich)
+
+- **`data.query`-Schema geflattet (`0c8f7c6`):** die erste Live-Zelle scheiterte,
+  weil das Schema einen `{query:{…}}`-Wrapper verlangte, die Description-Beispiele
+  aber das nackte Objekt zeigten — 8B-Modelle kopieren Beispiele wörtlich und
+  wurden abgelehnt. Fix: Schema akzeptiert das bare Query-Objekt.
+- **`fs.search` `dir`-Feld (`35b3d1c`):** Modelle emittierten von selbst ein
+  `dir`-Scope-Feld; statt es zu verwerfen, ist es jetzt optional unterstützt.
+
+Beide sind derselbe First-Principles-Befund wie schon bei der Protokoll-Drift:
+**Tool-Schemas für kleine Modelle müssen exakt dem folgen, was die Modelle
+ohnehin emittieren — Messung vor Meinung.**
+
+## Vergleichs-Ehrlichkeit: der smolagents-Gap ist noch nicht fair vermessen
+
+Der zitierte smolagents-Wert (63–65 %) stammt von **Firma v1 mit dem alten
+Toolset**. Der faire v2-Vergleich — smolagents mit demselben neuen Toolset
+(`data.query`, `knowledge.search`, Office-Extraktion) über die Bridge — steht
+**aus** und ist bis zum Ollama-Neustart mit gesetztem `OLLAMA_CONTEXT_LENGTH`
+geparkt (sonst erbt der /v1-Client den 40.960-Default → CPU-Spill, s.
+Betriebs-Lehre oben). Bis dahin ist „≥ smolagents" nicht belastbar behauptbar.
+
+## Zweite Beweisachse: Compliance (Stand Tag 2)
+
+Parallel ausgebaut und in [eu-compliance-vergleich.md](eu-compliance-vergleich.md)
+nachprüfbar dokumentiert: hash-verkettetes Audit-Log jedes Tool-Calls,
+Art.-50-KI-Kennzeichnung (maschinenlesbar), Tool-RBAC (Rolle→Tool-Matrix,
+`a80e4ff`) und VVT-Export aus Tool-Manifesten — jeweils mit Nachweis-Kommandos.
+Diese Featureliste hat keines der leichten TS-Frameworks.
+
+## Abgleich mit den Erfolgskriterien der Produkt-Roadmap
+
+Gegen die vier Kriterien aus
+[research/2026-07-11-synthese-produkt-roadmap.md](research/2026-07-11-synthese-produkt-roadmap.md)
+(„das beste Harness"):
+
+| Kriterium | Stand | Beleg / offener Rest |
+|---|---|---|
+| (a) ≥ smolagents-Niveau in der Kern-Recherche | **OFFEN** | Bestwert 54 % (rag+verify); der faire v2-Vergleich gegen smolagents steht aus (geparkt bis Ollama-Neustart) — der v1-Wert 63–65 % ist nicht vergleichbar |
+| (b) einzige Lösung > 0 % in der Tabellen-Klasse | **teils erfüllt** | 6/15 Joins über `data.query` (native/smolagents: 0 mit CSV-only); es fehlen `s03` (Header-Diff über Monatsdateien) und `s04` (Muster-Join) — Verhaltens-, keine Werkzeugfälle |
+| (c) Verweigerungsdisziplin ≥ 5/6 | **erfüllt** | 6/6 beim Bestwert-Arm (rag+verify); auch native/verify halten 6/6 |
+| (d) Compliance-Featureliste, die kein leichtes Framework hat | **erfüllt** | Audit-Kette, Art. 50, Tool-RBAC, VVT-Export — verlinkt in eu-compliance-vergleich.md |
+
+**Lehre des Tages:** Der größte Hebel war ein Werkzeug (`data.query` öffnet die
+Join-Klasse, `knowledge.search` hebt die Kern-Recherche auf 54 %), nicht ein
+zusätzlicher Loop — der Scaffold ist auf qwen ein sauber gemessenes
+Negativ-Ergebnis und bleibt Nische. Zwei ehrliche Negativ-Ergebnisse
+(Scaffold < verify, always-on-Kompression schädlich) sind so viel wert wie die
+Bestwerte: sie halten die Default-Config schlank und first-principles-begründet.

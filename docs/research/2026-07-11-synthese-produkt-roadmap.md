@@ -52,6 +52,8 @@ Jeder Hebel wird auf der Demo-Firma (2.169 Dateien, 3 Fakten-Klassen + Verweiger
 
 **Erfolgskriterium („das beste Harness"):** Auf identischen Aufgaben, identischem lokalem Modell: (a) ≥ smolagents-Niveau in der Kern-Recherche, (b) einzige Lösung > 0 % in der Tabellen-Klasse, (c) Verweigerungsdisziplin ≥ 5/6, (d) Compliance-Featureliste, die kein leichtes Framework hat — alles reproduzierbar in results.jsonl.
 
+> **Abgleich Stand 2026-07-12** (Kampagne v2 Tag 2, Messtabelle in [../mittelstand-validierung.md](../mittelstand-validierung.md)): (a) **offen** — Bestwert 54 % (rag+verify), fairer v2-smolagents-Vergleich ausstehend; (b) **teils erfüllt** — 6/15 Joins über `data.query`, offen bleiben s03/s04; (c) **erfüllt** — 6/6 beim Bestwert-Arm; (d) **erfüllt** — verlinkt in eu-compliance-vergleich.md.
+
 ## Bekannte Grenzen (ehrlich dokumentieren, nicht verstecken)
 
 - 8–14B bleibt assistierte Recherche, keine offene Autonomie (GAIA-Realität ~20–24 %).
