@@ -50,6 +50,11 @@ const MAX_TURNS = 12;
 // (semantic retrieval over company/out/corpus via build-knowledge.ts) — measures
 // whether embedding search on top of fs.search lifts the "where is X documented"
 // facts; needs a pre-built knowledge.db;
+// "minimal@fold" = the text-protocol harness with opt-in context compaction
+// (ACON, arXiv 2510.00615): old tool observations are deterministically
+// truncated and, over a numCtx budget, folded into one LLM Merkzettel — the
+// lever against silent eviction on long research runs;
+// "minimal@verify+fold" = the best qwen arm (verifyFinalAnswer) plus that lever;
 // "native" = the fair competitor baseline (straight Ollama function calling,
 // no retries/recovery — mirrors bench/harnesses/ollama-native.ts but with the
 // same deployment prompt); smolagents-* = Hugging Face's library, off-the-shelf.
@@ -212,7 +217,9 @@ async function runFact(fact: CompanyFact, seed: number): Promise<FactRunResult> 
     ...(HARNESS === "minimal@nt" ? { nativeToolCalling: true } : {}),
     // Answer verification: one extra LLM call re-checks the final answer
     // against the collected tool results before it ships (core feature).
-    ...(HARNESS === "minimal@verify" ? { verifyFinalAnswer: true } : {}),
+    // "minimal@verify+fold" combines it with context compaction — the best qwen
+    // arm plus the ACON lever (arXiv 2510.00615) for long research runs.
+    ...(HARNESS === "minimal@verify" || HARNESS === "minimal@verify+fold" ? { verifyFinalAnswer: true } : {}),
     // Research config: up to 4 tool calls per turn, executed in parallel.
     // 4 because tool results land in context: 4 reads x ~1.5k tokens ≈ 6k
     // per turn still fits the 16k window with memory folding; smolagents'
@@ -234,6 +241,13 @@ async function runFact(fact: CompanyFact, seed: number): Promise<FactRunResult> 
       // "minimal@scaffold" = opt-in persistence scaffold (plan/gate/recover +
       // first-thought). Text-protocol only, so no @nt combination here.
       ...(HARNESS === "minimal@scaffold" ? { scaffold: true } : {}),
+      // "minimal@fold" = opt-in context compaction only (deterministic old-
+      // observation truncation + numCtx-budgeted LLM Merkzettel fallback);
+      // "minimal@verify+fold" adds it on top of answer verification. numCtx
+      // matches the 16k OllamaClient config above so the stage-2 budget is real.
+      ...(HARNESS === "minimal@fold" || HARNESS === "minimal@verify+fold"
+        ? { contextCompaction: { numCtx: 16384 } }
+        : {}),
     });
     if (result.terminatedReason !== "final_answer") {
       const raw = result.rawTurns.at(-1)?.rawAssistantOutput?.slice(0, 2000);

@@ -43,6 +43,137 @@ function normalizeScaffold(flag: boolean | { rePlanEvery?: number } | undefined)
 }
 
 /**
+ * Resolved context-compaction config (arXiv 2510.00615 ACON). `keepRecentTurns`
+ * governs the deterministic stage; `thresholdChars` the LLM fallback stage.
+ */
+interface CompactionConfig {
+  keepRecentTurns: number;
+  thresholdChars: number;
+}
+
+/**
+ * Keep the last 3 tool-result turns verbatim. Why 3: the model almost always
+ * needs the immediately preceding observation (to act on it) and one or two
+ * before it (to cross-check / avoid re-issuing a call). Older results have
+ * already done their job — their DETAIL is dead weight, only their WHAT matters
+ * (which the deterministic summary preserves). Lower risks evicting a still-live
+ * result; higher barely compresses.
+ */
+const DEFAULT_KEEP_RECENT_TURNS = 3;
+/** Backend context window assumed when the caller does not pass one — the bench/company Ollama config. */
+const DEFAULT_NUM_CTX = 16384;
+/**
+ * Lines of each truncated tool result kept before the marker. 5 is enough to
+ * carry the identifying head of an observation (a filename, a table header, the
+ * first data rows) without the bulk that overflows the window.
+ */
+const COMPACTION_HEAD_LINES = 5;
+/**
+ * Deterministic char→token proxy (zero-dep: no tokenizer). ~4 chars/token is a
+ * conservative English/German BPE estimate; it only has to be stable, not exact,
+ * because it gates a threshold, not a hard limit.
+ */
+const CHARS_PER_TOKEN = 4;
+/**
+ * Stage 2 fires when the estimated prompt would fill more than 70 % of numCtx —
+ * i.e. once less than ~30 % of the window is left for the model's thinking +
+ * answer (qwen3 think mode is token-heavy). Below this, stage 1 alone is assumed
+ * sufficient and the extra summary call is not worth its cost.
+ */
+const PROMPT_BUDGET_FRACTION = 0.7;
+
+function normalizeCompaction(
+  flag: { keepRecentTurns?: number; numCtx?: number } | undefined,
+): CompactionConfig | undefined {
+  if (!flag) return undefined;
+  const keepRecentTurns = Math.max(1, flag.keepRecentTurns ?? DEFAULT_KEEP_RECENT_TURNS);
+  const numCtx = flag.numCtx ?? DEFAULT_NUM_CTX;
+  const thresholdChars = Math.floor(numCtx * CHARS_PER_TOKEN * PROMPT_BUDGET_FRACTION);
+  return { keepRecentTurns, thresholdChars };
+}
+
+/** German Merkzettel prompt (model-facing content; primary target runs in German). */
+const COMPACTION_SUMMARY_PROMPT =
+  "Fasse den bisherigen Rechercheverlauf als kompakten Merkzettel zusammen, damit die " +
+  "Recherche ohne den vollen Verlauf fortgesetzt werden kann. Struktur exakt:\n" +
+  "Bisher geprüft: <welche Quellen/Tools mit welchen Argumenten>\n" +
+  "Ergebnisse: <konkrete gefundene Fakten/Zahlen>\n" +
+  "Offen: <was noch fehlt>\n" +
+  "Nur der Merkzettel, keine weitere Aktion.";
+
+/** A short, single-line hint of the tool arguments, recovered from the assistant turn that issued the call. */
+function extractArgsHint(precedingAssistant: string | undefined): string {
+  if (!precedingAssistant) return "";
+  const m = precedingAssistant.match(/ARGS:\s*(.+)/);
+  const raw = (m?.[1] ?? "").trim();
+  if (raw.length === 0) return "";
+  return raw.length > 60 ? `${raw.slice(0, 57)}...` : raw;
+}
+
+/**
+ * Deterministic stage-1 replacement for a single tool-result message: keep the
+ * first COMPACTION_HEAD_LINES lines of the result, then a marker naming the
+ * original size, the tool and (best effort) its args. No LLM call; the WHAT
+ * survives, only the DETAIL is dropped. Tool messages are
+ * `JSON.stringify({ tool, result })`, so the tool name and a readable result
+ * are recovered by parsing; a non-JSON message falls back to raw text.
+ */
+function summarizeToolResult(content: string, precedingAssistant: string | undefined, headLines: number): string {
+  const originalLen = content.length;
+  let toolName = "?";
+  let resultText = content;
+  const parsed = safeParseJson(content);
+  if (parsed.ok && parsed.value !== null && typeof parsed.value === "object") {
+    const obj = parsed.value as Record<string, unknown>;
+    if (typeof obj.tool === "string") toolName = obj.tool;
+    if ("result" in obj) resultText = typeof obj.result === "string" ? obj.result : JSON.stringify(obj.result);
+  }
+  const head = resultText.split("\n").slice(0, headLines).join("\n");
+  const argsHint = extractArgsHint(precedingAssistant);
+  const marker = `[gekürzt: war ${originalLen} Zeichen, Tool ${toolName}${argsHint ? `, Args ${argsHint}` : ""}]`;
+  return `${head}\n${marker}`;
+}
+
+/** Deterministic prompt-size proxy: total content chars across all messages. */
+function estimatePromptChars(prompt: { content: string }[]): number {
+  let n = 0;
+  for (const m of prompt) n += m.content.length;
+  return n;
+}
+
+/**
+ * Stage 1 (deterministic): replace tool results older than `keepRecentTurns`
+ * turns with a compact summary. Consecutive tool messages form one turn's
+ * observations (parallel tool calls land back-to-back), so the last
+ * `keepRecentTurns` such groups stay verbatim and everything older is truncated.
+ */
+function truncateOldObservations<T extends { role: string; content: string }>(
+  messages: T[],
+  keepRecentTurns: number,
+  headLines: number,
+): T[] {
+  // Group indices of tool messages by turn (a run of adjacent tool messages).
+  const groups: number[][] = [];
+  for (let i = 0; i < messages.length; i++) {
+    if (messages[i]!.role !== "tool") continue;
+    if (i > 0 && messages[i - 1]!.role === "tool" && groups.length > 0) {
+      groups[groups.length - 1]!.push(i);
+    } else {
+      groups.push([i]);
+    }
+  }
+  const cutoff = groups.length - keepRecentTurns;
+  if (cutoff <= 0) return messages;
+  const oldIndices = new Set<number>();
+  for (let g = 0; g < cutoff; g++) for (const idx of groups[g]!) oldIndices.add(idx);
+  return messages.map((m, i) =>
+    oldIndices.has(i)
+      ? ({ ...m, content: summarizeToolResult(m.content, messages[i - 1]?.content, headLines) } as T)
+      : m,
+  );
+}
+
+/**
  * Scaffold-mode injected prompts. German on purpose: the primary target
  * (bench/company, qwen3:8b) operates in German and these strings are
  * model-facing content, not code. The four stages, per the paper:
@@ -244,18 +375,27 @@ export class DefaultAgentLoop implements AgentLoop {
    * prompt stays bounded. Extracted so the scaffold's forced-final step reuses
    * the exact same context contract as the main loop.
    */
-  private async buildTurnMessages(sessionId: string, systemInstruction: string): Promise<ChatMessage[]> {
+  private async buildTurnMessages(
+    sessionId: string,
+    systemInstruction: string,
+    compaction?: CompactionConfig,
+  ): Promise<ChatMessage[]> {
     const state = await this.deps.memory.get(sessionId);
-    let recentMessages = state.messages;
+    // Stage 1 of opt-in compaction runs BEFORE the maxContextMessages fold so
+    // even the extractive summary of very old turns uses truncated observations.
+    const messages = compaction
+      ? truncateOldObservations(state.messages, compaction.keepRecentTurns, COMPACTION_HEAD_LINES)
+      : state.messages;
+    let recentMessages = messages;
     let memorySummary = state.summary;
-    if (state.messages.length > this.maxContextMessages) {
-      const olderCount = state.messages.length - this.maxContextMessages;
-      const older = state.messages.slice(0, olderCount);
-      recentMessages = state.messages.slice(olderCount);
+    if (messages.length > this.maxContextMessages) {
+      const olderCount = messages.length - this.maxContextMessages;
+      const older = messages.slice(0, olderCount);
+      recentMessages = messages.slice(olderCount);
       const folded = extractiveSummary(older, older.length);
       memorySummary = state.summary ? `${state.summary}\n${folded}` : folded;
     }
-    return this.deps.promptBuilder.build({
+    const prompt = this.deps.promptBuilder.build({
       systemInstruction,
       // In native mode the tool specs travel via the API; the text protocol
       // block would only burn tokens the model never uses.
@@ -265,6 +405,39 @@ export class DefaultAgentLoop implements AgentLoop {
       ...(memorySummary ? { memorySummary } : {}),
       recentMessages,
     });
+    // Stage 2 (LLM fallback): only when stage 1 did not bring the prompt under
+    // the numCtx-derived budget. A failed summary call keeps stage 1 — no crash.
+    if (compaction && estimatePromptChars(prompt) > compaction.thresholdChars) {
+      return this.compactWithLlm(prompt);
+    }
+    return prompt;
+  }
+
+  /**
+   * Stage 2 of context compaction: one LLM call folds the oldest half of the
+   * conversation (system messages excluded) into a single structured Merkzettel,
+   * marked as an assistant message. On any failure the un-summarized prompt is
+   * returned unchanged, so stage 1 still stands and the run never crashes.
+   */
+  private async compactWithLlm(prompt: ChatMessage[]): Promise<ChatMessage[]> {
+    const system = prompt.filter((m) => m.role === "system");
+    const convo = prompt.filter((m) => m.role !== "system");
+    // Nothing meaningful to fold below a handful of messages.
+    if (convo.length < 4) return prompt;
+    const half = Math.floor(convo.length / 2);
+    const oldHalf = convo.slice(0, half);
+    const keep = convo.slice(half);
+    try {
+      const response = await this.deps.llm.generate([...oldHalf, { role: "user", content: COMPACTION_SUMMARY_PROMPT }]);
+      const merkzettel: ChatMessage = {
+        role: "assistant",
+        content: `MERKZETTEL (verdichteter Verlauf):\n${response.content.trim()}`,
+      };
+      return [...system, merkzettel, ...keep];
+    } catch (err) {
+      logger.warn(`Context compaction summary failed, keeping deterministic truncation: ${err instanceof Error ? err.message : String(err)}`);
+      return prompt;
+    }
   }
 
   /**
@@ -306,6 +479,10 @@ export class DefaultAgentLoop implements AgentLoop {
     const { sessionId, userMessage, maxTurns = 10, onToken, responseSchema } = input;
     const { llm, memory, toolBridge, validator } = this.deps;
     const scaffold = normalizeScaffold(input.scaffold);
+    // Opt-in context compaction (arXiv 2510.00615). Orthogonal to scaffold and
+    // nativeToolCalling — it only reshapes the prompt history, so no exclusivity
+    // guard is needed; it composes with every mode.
+    const compaction = normalizeCompaction(input.contextCompaction);
     // Non-monotone warning (arXiv 2605.12129): the scaffold gates termination
     // through the text protocol's final_answer action. In native mode the model
     // ends a run with plain content and its tool calls bypass the parser — the
@@ -344,7 +521,7 @@ export class DefaultAgentLoop implements AgentLoop {
     }));
 
     for (let turn = 0; turn < maxTurns; turn++) {
-      const messages = await this.buildTurnMessages(sessionId, systemInstruction);
+      const messages = await this.buildTurnMessages(sessionId, systemInstruction, compaction);
 
       // Scaffold preamble (text-protocol only; scaffold+native throws above).
       if (scaffold) {
@@ -606,7 +783,7 @@ export class DefaultAgentLoop implements AgentLoop {
     // results rather than returning an empty answer — the model must commit to
     // something (an answer or an explicit "not derivable").
     if (scaffold) {
-      const messages = await this.buildTurnMessages(sessionId, systemInstruction);
+      const messages = await this.buildTurnMessages(sessionId, systemInstruction, compaction);
       const forced = await llm.generate([...messages, { role: "user", content: SCAFFOLD_FORCE_FINAL_PROMPT }]);
       const parsed = parseAssistantOutput(forced.content, validator);
       let finalAnswer = parsed.kind === "final" ? (parsed.finalText ?? forced.content) : forced.content.trim();

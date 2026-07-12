@@ -476,6 +476,120 @@ describe("DefaultAgentLoop", () => {
     });
   });
 
+  describe("contextCompaction (opt-in, arXiv 2510.00615)", () => {
+    // Rationale: on long research runs (16k ctx, 6k-char tool results, 12 turns)
+    // early observations either fall out of the window (silent eviction) or clog
+    // it. Compacting old observations cuts peak tokens and clarifies dependencies
+    // so a small model stops repeating a failed call. Two stages: deterministic
+    // truncation always, one LLM Merkzettel call only over a numCtx-derived budget.
+    const longResult = (tag: string) =>
+      JSON.stringify({ tool: "fs.read", result: [...Array(20)].map((_, i) => `line ${i}`).join("\n") + `\nTAIL_${tag}` });
+
+    // Seeds a session with `turns` assistant(tool_call)+tool pairs, each tool
+    // result carrying a unique tail tag so truncation can be observed.
+    async function seedToolHistory(memory: InMemoryMemory, session: string, tags: string[]) {
+      for (const tag of tags) {
+        await memory.append(session, { role: "assistant", content: `ACTION: tool_call\nTOOL: fs.read\nARGS: {"path":"${tag}.txt"}`, timestamp: 0 });
+        await memory.append(session, { role: "tool", content: longResult(tag), timestamp: 0 });
+      }
+    }
+
+    function makeLoop(memory: InMemoryMemory, llm: ReturnType<typeof adapterFromFn>) {
+      return new DefaultAgentLoop({
+        llm,
+        memory,
+        toolBridge: new DefaultToolBridge(),
+        validator: new StructuredOutputValidator(),
+        promptBuilder: new DefaultPromptBuilder(),
+      });
+    }
+
+    it("truncates tool results older than keepRecentTurns, keeps recent ones full", async () => {
+      const seen: ChatMessage[][] = [];
+      const llm = adapterFromFn(async (messages) => {
+        seen.push(messages);
+        return { content: "ACTION: final_answer\nANSWER: ok" };
+      });
+      const memory = new InMemoryMemory();
+      await seedToolHistory(memory, "cmp", ["A", "B", "C", "D"]);
+      await makeLoop(memory, llm).run({ sessionId: "cmp", userMessage: "go", contextCompaction: { keepRecentTurns: 2 } });
+
+      const tools = seen[0]!.filter((m) => m.role === "tool");
+      expect(tools).toHaveLength(4);
+      // Old turns A,B: truncated — marker present, original tail gone.
+      expect(tools[0]!.content).toMatch(/\[gekürzt: war \d+ Zeichen, Tool fs\.read, Args \{"path":"A\.txt"\}\]/);
+      expect(tools[0]!.content).not.toContain("TAIL_A"); // dropped body (only first lines kept)
+      expect(tools[1]!.content).toContain("[gekürzt:");
+      // Recent turns C,D: full — tail tag preserved, no marker.
+      expect(tools[2]!.content).toContain("TAIL_C");
+      expect(tools[2]!.content).not.toContain("[gekürzt:");
+      expect(tools[3]!.content).toContain("TAIL_D");
+    });
+
+    it("without the flag leaves tool results byte-identical (regression: default off)", async () => {
+      const seen: ChatMessage[][] = [];
+      let calls = 0;
+      const llm = adapterFromFn(async (messages) => {
+        calls++;
+        seen.push(messages);
+        return { content: "ACTION: final_answer\nANSWER: ok" };
+      });
+      const memory = new InMemoryMemory();
+      await seedToolHistory(memory, "cmp-off", ["A", "B", "C", "D"]);
+      await makeLoop(memory, llm).run({ sessionId: "cmp-off", userMessage: "go" });
+
+      const tools = seen[0]!.filter((m) => m.role === "tool");
+      expect(calls).toBe(1); // no extra summary call
+      expect(tools.every((m) => !m.content.includes("[gekürzt:"))).toBe(true);
+      expect(tools[0]!.content).toBe(longResult("A")); // untouched
+    });
+
+    it("fires the LLM Merkzettel stage only over the numCtx-derived threshold", async () => {
+      let summaryCalls = 0;
+      const isSummary = (messages: ChatMessage[]) => /Merkzettel/.test(messages[messages.length - 1]!.content);
+      const llm = adapterFromFn(async (messages) => {
+        if (isSummary(messages)) {
+          summaryCalls++;
+          return { content: "Bisher geprüft: X\nErgebnisse: Y\nOffen: Z" };
+        }
+        return { content: "ACTION: final_answer\nANSWER: ok" };
+      });
+
+      // Large window: stage 1 keeps the prompt under budget → no summary call.
+      const m1 = new InMemoryMemory();
+      await seedToolHistory(m1, "cmp-hi", ["A", "B", "C", "D"]);
+      await makeLoop(m1, llm).run({ sessionId: "cmp-hi", userMessage: "go", contextCompaction: { numCtx: 16384 } });
+      expect(summaryCalls).toBe(0);
+
+      // Tiny window: prompt exceeds the budget even after stage 1 → one summary call.
+      const m2 = new InMemoryMemory();
+      await seedToolHistory(m2, "cmp-lo", ["A", "B", "C", "D"]);
+      await makeLoop(m2, llm).run({ sessionId: "cmp-lo", userMessage: "go", contextCompaction: { numCtx: 50 } });
+      expect(summaryCalls).toBe(1);
+    });
+
+    it("keeps stage 1 and does not crash when the Merkzettel call fails", async () => {
+      const seen: ChatMessage[][] = [];
+      const llm = adapterFromFn(async (messages) => {
+        if (/Merkzettel/.test(messages[messages.length - 1]!.content)) throw new Error("summarizer down");
+        seen.push(messages);
+        return { content: "ACTION: final_answer\nANSWER: ok" };
+      });
+      const memory = new InMemoryMemory();
+      await seedToolHistory(memory, "cmp-err", ["A", "B", "C", "D"]);
+      const result = await makeLoop(memory, llm).run({
+        sessionId: "cmp-err",
+        userMessage: "go",
+        contextCompaction: { keepRecentTurns: 2, numCtx: 50 },
+      });
+
+      expect(result.terminatedReason).toBe("final_answer"); // graceful — no crash
+      // The main turn still ran on the stage-1-truncated prompt.
+      const tools = seen[0]!.filter((m) => m.role === "tool");
+      expect(tools.some((m) => m.content.includes("[gekürzt:"))).toBe(true);
+    });
+  });
+
   it("streams main-turn tokens to the caller via input.onToken", async () => {
     const responses = [
       `ACTION: tool_call\nTOOL: calculator.evaluate\nARGS: {"expression":"3*3"}`,

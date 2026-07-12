@@ -30,6 +30,34 @@ export interface AgentLoopInput {
    * See docs/research/2026-07-11-sota-small-model-agents.md.
    */
   scaffold?: boolean | { rePlanEvery?: number };
+  /**
+   * Opt-in context compaction for long research runs (arXiv 2510.00615 ACON):
+   * compressing old observations cuts peak tokens 26–54 % and lifts small
+   * models +20–46 %, because the compacted history clarifies dependencies (the
+   * agent stops repeating the same failed call). Default off — no other mode
+   * changes without this flag.
+   *
+   * Two stages (see agent-loop.ts):
+   *  - Deterministic (always when active): tool results older than
+   *    `keepRecentTurns` turns are replaced in-history by a compact summary
+   *    (first lines + a truncation marker). No LLM call, no loss of the WHAT.
+   *  - LLM fallback (only when needed): if the estimated prompt still exceeds a
+   *    budget derived from `numCtx`, one LLM call folds the oldest half of the
+   *    history into a structured "Merkzettel". Its failure keeps stage 1 — no
+   *    crash.
+   *
+   * Orthogonal to the text protocol, nativeToolCalling and scaffold — it only
+   * reshapes the prompt history and combines with all of them.
+   */
+  contextCompaction?: {
+    /** Keep the last N tool-result turns verbatim; older ones are truncated. Default 3. */
+    keepRecentTurns?: number;
+    /**
+     * Backend context window in tokens, used to size the stage-2 trigger.
+     * Default 16384 — matches the OllamaClient config in bench/company.
+     */
+    numCtx?: number;
+  };
 }
 
 export interface AgentTurn {
