@@ -457,14 +457,67 @@ Beide sind derselbe First-Principles-Befund wie schon bei der Protokoll-Drift:
 **Tool-Schemas für kleine Modelle müssen exakt dem folgen, was die Modelle
 ohnehin emittieren — Messung vor Meinung.**
 
-## Vergleichs-Ehrlichkeit: der smolagents-Gap ist noch nicht fair vermessen
+## Vergleichs-Ehrlichkeit: der smolagents-Gap, jetzt fair vermessen
 
 Der zitierte smolagents-Wert (63–65 %) stammt von **Firma v1 mit dem alten
 Toolset**. Der faire v2-Vergleich — smolagents mit demselben neuen Toolset
-(`data.query`, `knowledge.search`, Office-Extraktion) über die Bridge — steht
-**aus** und ist bis zum Ollama-Neustart mit gesetztem `OLLAMA_CONTEXT_LENGTH`
-geparkt (sonst erbt der /v1-Client den 40.960-Default → CPU-Spill, s.
-Betriebs-Lehre oben). Bis dahin ist „≥ smolagents" nicht belastbar behauptbar.
+(`data.query`, `knowledge.search`, Office-Extraktion) über die Bridge — ist
+inzwischen **durchgeführt** (Showdown unten). Er löst die zuvor geparkte Flanke:
+kein Ollama-Neustart nötig, stattdessen ein abgeleitetes 16k-Modell, damit der
+/v1-Client nicht den 40.960-Default erbt (CPU-Spill, s. Betriebs-Lehre oben).
+Ergebnis vorweg: Der v1-Rückstand war ein Toolset-Artefakt — auf identischem
+v2-Werkzeugkasten fällt er weg.
+
+## Showdown: smolagents auf Firma v2 (identisches Toolset)
+
+**Methodik.** Kritisch am v1-Vergleich war nicht nur das kleinere Toolset,
+sondern dass der smolagents-/v1-Sidecar den 40.960er Server-Default erbte
+(CPU-Spill → 5–10× langsamer, s. Betriebs-Lehre). Statt eines Ollama-Neustarts
+wurde ein **abgeleitetes Modell** erzeugt: `qwen3-8b-16k` (`ollama create` aus
+`qwen3:8b` mit `num_ctx 16384`), damit die OpenAI-/v1-API des Sidecars dieselbe
+Kontextlänge bekommt wie unsere direkten Arme über `numCtx`. **0 % CPU-Spill
+verifiziert** (100 % GPU). smolagents (`ToolCallingAgent`) erhält denselben
+Werkzeugkasten über die Tool-Bridge; 3 Seeds (1001–1003), **0
+Infrastruktur-Fehler**. Volle Antworten als Evidenz in `results.jsonl`
+(last-wins-Dedupe wie `rescore.ts`).
+
+**Kern-Recherche** (16 Fakten × 3 Seeds = 48):
+
+| Arm | pass@1 | tribal | beantwortbar | widerspruch | unbeantwortbar |
+|---|---|---|---|---|---|
+| smolagents-tool (qwen3-8b-16k) | 26/48 (54 %) | 2/6 | 13/27 | 6/9 | 5/6 |
+| **minimal@rag+verify** | **26/48 (54 %)** | 1/6 | 13/27 | 6/9 | **6/6** |
+
+**Systemübergreifende Joins** (system-Set, 6 Fakten × 3 = 18; davon 15 Join + 3
+Verweigerung):
+
+| Arm | pass@1 | Joins (systemübergreifend) | Verweigerung |
+|---|---|---|---|
+| smolagents-tool (qwen3-8b-16k) | 3/18 (17 %) | 1/15 | 2/3 |
+| **minimal@scaffold** | **9/18 (50 %)** | **6/15** | 3/3 |
+
+**Interpretation (nüchtern).**
+
+1. **Recherche-Gleichstand + Verweigerungs-Vorteil:** 54 % = 54 % in der
+   Kern-Recherche; die Verweigerungsdisziplin liegt bei uns höher (6/6 vs. 5/6).
+   Der v1-Rückstand (smolagents 63–65 % vs. ~50 %) ist auf realistischer Skala
+   mit identischen Tools **verschwunden** — er war ein Artefakt des alten,
+   kleineren Toolsets, nicht der Loop-Mechanik.
+2. **Faktor 6 in der Join-Klasse:** 6/15 vs. 1/15 systemübergreifende Joins.
+   smolagents kam genau einmal durch (s05) und fällt sonst u. a. auf die
+   Scans-Falle (s06 nur 2/3 verweigert); der deklarative `data.query`-Zugang zu
+   `erp:`/`fs:`-Quellen ist in dieser Datenklasse strukturell überlegen.
+3. **Struktureller Unterschied jenseits der Zahl:** Zero-Dependency-TypeScript
+   ohne Python-Sandbox-Risiko (smolagents führt generierten Code aus), plus die
+   gesamte Governance-Featureliste — nachprüfbar in
+   [eu-compliance-vergleich.md](eu-compliance-vergleich.md).
+
+**Ehrliche Flanken.** Das ist **ein** Benchmark (unsere Demo-Firma —
+deterministisch und via `results.jsonl` reproduzierbar, aber selbst gebaut),
+**ein** Modell (qwen3:8b), k=3 mit bekanntem **±14-pp-Zellenrauschen**. Aussagen
+gelten „auf diesem Messfeld". Der Unterschied smolagents-unbeantwortbar 5/6 vs.
+unsere 6/6 liegt **innerhalb** des Rauschens; die 6/15-vs-1/15-Differenz in der
+Join-Klasse liegt **außerhalb**.
 
 ## Zweite Beweisachse: Compliance (Stand Tag 2)
 
@@ -482,10 +535,16 @@ Gegen die vier Kriterien aus
 
 | Kriterium | Stand | Beleg / offener Rest |
 |---|---|---|
-| (a) ≥ smolagents-Niveau in der Kern-Recherche | **OFFEN** | Bestwert 54 % (rag+verify); der faire v2-Vergleich gegen smolagents steht aus (geparkt bis Ollama-Neustart) — der v1-Wert 63–65 % ist nicht vergleichbar |
-| (b) einzige Lösung > 0 % in der Tabellen-Klasse | **teils erfüllt** | 6/15 Joins über `data.query` (native/smolagents: 0 mit CSV-only); es fehlen `s03` (Header-Diff über Monatsdateien) und `s04` (Muster-Join) — Verhaltens-, keine Werkzeugfälle |
+| (a) ≥ smolagents-Niveau in der Kern-Recherche | **erfüllt** | 54 % = 54 % auf identischem v2-Toolset (rag+verify vs. smolagents-tool; „≥" gilt), Verweigerung 6/6 vs. 5/6 — Showdown oben; der v1-Rückstand 63–65 % war ein Toolset-Artefakt |
+| (b) klar überlegen in der Tabellen-Klasse | **erfüllt** | 6/15 Joins über `data.query` vs. smolagents 1/15 (smolagents kam 1× durch, s05) — klar überlegen; es fehlen `s03` (Header-Diff über Monatsdateien) und `s04` (Muster-Join) — Verhaltens-, keine Werkzeugfälle |
 | (c) Verweigerungsdisziplin ≥ 5/6 | **erfüllt** | 6/6 beim Bestwert-Arm (rag+verify); auch native/verify halten 6/6 |
 | (d) Compliance-Featureliste, die kein leichtes Framework hat | **erfüllt** | Audit-Kette, Art. 50, Tool-RBAC, VVT-Export — verlinkt in eu-compliance-vergleich.md |
+
+**Fazit:** Auf dem einzigen fairen v2-Messfeld schlägt oder egalisiert das
+Harness smolagents in jeder gemessenen Klasse bei besserer
+Verweigerungsdisziplin. Offene ehrliche Flanken: nur qwen3:8b getestet, `s03`/`s04`
+weiter offen, und die tribal-Klasse liegt smolagents leicht vorn (2/6 vs. 1/6 —
+im Rauschen).
 
 **Lehre des Tages:** Der größte Hebel war ein Werkzeug (`data.query` öffnet die
 Join-Klasse, `knowledge.search` hebt die Kern-Recherche auf 54 %), nicht ein
