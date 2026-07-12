@@ -12,11 +12,13 @@
  *   SYSTEM_INSTRUCTION optional system prompt override
  *   AUDIT_DB          optional — enables the hash-chained audit log (Art. 12/19)
  *   AI_DISCLOSURE     default on — AI labelling per Art. 50; "false" opts out
+ *   TOOL_POLICY       optional — tool-level RBAC (NIS2/Art. 32); path to a JSON
+ *                     file (recommended) or inline JSON: {roles, userRoles}
  *
  * Built to dist/server-main.js — the Docker image runs plain node, no tsx.
  */
 import { createAgentServer } from "./agent-server.js";
-import { parseApiKeys, parseList } from "./config.js";
+import { parseApiKeys, parseList, parseToolPolicy } from "./config.js";
 import { OllamaClient } from "../llm/ollama-client.js";
 import { SqliteMemory } from "../memory/sqlite-memory.js";
 import { OllamaEmbedder } from "../rag/embedder.js";
@@ -30,6 +32,7 @@ const port = Number(process.env.PORT ?? 8790);
 const baseUrl = process.env.OLLAMA_BASE_URL ?? "http://localhost:11434";
 const apiKeys = parseApiKeys(process.env.API_KEYS);
 const requireApproval = parseList(process.env.REQUIRE_APPROVAL);
+const toolPolicy = parseToolPolicy(process.env.TOOL_POLICY);
 
 const tools: ToolDefinition[] = [calculatorTool, clockTool];
 if (process.env.KNOWLEDGE_DB) {
@@ -52,6 +55,7 @@ const server = createAgentServer({
   ...(requireApproval.length > 0 ? { requireApproval } : {}),
   ...(process.env.SYSTEM_INSTRUCTION ? { systemInstruction: process.env.SYSTEM_INSTRUCTION } : {}),
   ...(process.env.AUDIT_DB ? { auditDb: process.env.AUDIT_DB } : {}),
+  ...(toolPolicy ? { toolPolicy } : {}),
   // Art. 50 disclosure defaults on; opt out explicitly with AI_DISCLOSURE=false.
   ...(process.env.AI_DISCLOSURE !== undefined ? { aiDisclosure: process.env.AI_DISCLOSURE !== "false" } : {}),
 });
@@ -60,4 +64,5 @@ server.listen(port, () => {
   console.log(`minimal-harness agent server listening on :${port}`);
   console.log(`  model=${process.env.OLLAMA_MODEL ?? "qwen3:8b"} ollama=${baseUrl}`);
   console.log(`  users=${Object.values(apiKeys).join(",")} approval-gated=[${requireApproval.join(",")}]`);
+  console.log(`  tool-rbac=${toolPolicy ? `on (${Object.keys(toolPolicy.roles).length} roles)` : "off (all tools)"}`);
 });

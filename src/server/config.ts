@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from "node:fs";
+import { assertToolPolicy, type ToolPolicy } from "./tool-policy.js";
+
 /**
  * Parses the API_KEYS env format "key1:user1,key2:user2" — fail fast on
  * anything malformed; a misconfigured auth table must never boot silently.
@@ -26,4 +29,33 @@ export function parseList(raw: string | undefined): string[] {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+/**
+ * Loads the tool-RBAC policy from the TOOL_POLICY env var.
+ *
+ * Robuste Variante (dokumentiert): TOOL_POLICY wird als **Pfad zu einer
+ * JSON-Datei** interpretiert, wenn diese Datei existiert — sonst als **inline
+ * JSON**. Der Dateipfad ist die empfohlene, robustere Form: keine Shell-Escaping-
+ * Fallen, keine Zeilenlängen-Limits, die Matrix lässt sich versionieren und als
+ * Secret/Volume mounten. Inline-JSON bleibt für kleine Setups/Tests erlaubt.
+ * Undefined, wenn nicht gesetzt → keine RBAC (alle Tools erlaubt, kein Breaking Change).
+ */
+export function parseToolPolicy(raw: string | undefined): ToolPolicy | undefined {
+  if (!raw || raw.trim() === "") return undefined;
+  const value = raw.trim();
+  let json: string;
+  if (existsSync(value)) {
+    json = readFileSync(value, "utf8");
+  } else {
+    json = value;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    throw new Error("TOOL_POLICY is neither an existing JSON file path nor valid inline JSON");
+  }
+  assertToolPolicy(parsed);
+  return parsed;
 }

@@ -68,6 +68,13 @@ export const calculatorTool: ToolDefinition<CalcInput, CalcOutput> = {
     required: ["expression"],
     additionalProperties: false,
   },
+  // GDPR Art. 30 metadata (surfaced by GET /v1/compliance/vvt). Pure arithmetic
+  // on the request payload — no personal data, no external recipients.
+  manifest: {
+    purpose: "Arithmetische Auswertung eines vom Nutzer übergebenen Ausdrucks",
+    dataCategories: [],
+    recipients: [],
+  },
   async execute(input) {
     const result = safeEval(input.expression);
     return { expression: input.expression, result };

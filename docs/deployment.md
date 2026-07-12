@@ -63,6 +63,7 @@ Modelle einmalig laden: `docker compose exec ollama ollama pull qwen3:8b`
 | `SYSTEM_INSTRUCTION` | nein | — | eigener System-Prompt |
 | `AUDIT_DB` | nein | — | SQLite-Datei; aktiviert das revisionssichere Audit-Log (Art. 12/19) |
 | `AI_DISCLOSURE` | nein | `true` | KI-Kennzeichnung der Antworten (Art. 50); `false` deaktiviert sie |
+| `TOOL_POLICY` | nein | — | Tool-RBAC (NIS2/Art. 32): Pfad zu einer JSON-Datei (empfohlen) **oder** inline JSON `{roles, userRoles}`; ohne Angabe darf jeder User jedes Tool |
 
 ## Hardware-Planung (VRAM)
 
@@ -111,6 +112,27 @@ alles, was über die OpenAI-kompatible `/v1`-API kommt, erbt den Server-Default.
   JSON-Body plus Header `X-AI-Generated: true`; der erste Turn einer Session
   enthält zusätzlich ein menschenlesbares `disclosure`-Feld. Der Hinweis steht
   nur in den Response-Metadaten, nie im Antworttext des Modells.
+- **Tool-RBAC (NIS2 (7), DSGVO Art. 32, AI Act Art. 26):** `TOOL_POLICY`
+  aktiviert eine Rollen→Tool-Berechtigungsmatrix. Format (Datei **oder** inline):
+  ```json
+  { "roles":     { "analyst": ["*"], "buchhaltung": ["erp.*", "fs.read"] },
+    "userRoles": { "alice": "analyst", "bob": "buchhaltung" } }
+  ```
+  Muster: `*` (alle Tools), Präfix `fs.*`, oder exakter Name. Die Durchsetzung
+  ist ein **Filter vor dem Loop** — jeder User bekommt nur die erlaubten Tools in
+  seine ToolBridge, das Modell sieht verbotene Tools also gar nicht erst (kein
+  Prompt-Lärm, keine Umgehung zur Laufzeit). Ein **unbekannter User** (nicht in
+  `userRoles`) erhält **least privilege — keine Tools** (fail-closed). Bevorzuge
+  die **Datei-Variante** (`TOOL_POLICY=/etc/harness/policy.json`): kein
+  Shell-Escaping, versionierbar, als Secret/Volume mountbar. Bei aktivem
+  Audit-Log wird beim `run_start` die effektive Rolle + gewährte Toolliste des
+  Users protokolliert (Rechenschaft, Art. 5(2)).
+- **VVT-Auszug (DSGVO Art. 30):** `GET /v1/compliance/vvt` (authentifiziert)
+  erzeugt aus den registrierten Tools + ihren `manifest`-Metadaten einen
+  Verzeichnis-Baustein: pro Tool `{name, purpose, dataCategories, recipients,
+  rbacRoles, auditRetentionDays}`. Tools ohne Manifest erscheinen mit
+  `purpose: "(nicht deklariert)"` — der Report macht die Doku-Lücke sichtbar,
+  statt sie zu verbergen.
 - **Reverse-Proxy:** TLS-Terminierung + Rate-Limit davor; den Agenten-Port nur
   auf localhost/internem Netz binden (Beispiele oben binden 127.0.0.1).
 

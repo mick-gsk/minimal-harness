@@ -49,6 +49,8 @@ Eigenbau · ❌ nicht vorhanden.
 | Anforderung | minimal-harness | smolagents | LangChain + LangGraph | CrewAI | OpenAI Agents SDK (TS) | Mastra | Haystack + deepset | n8n |
 |---|---|---|---|---|---|---|---|---|
 | **Audit-Log unter eigener Kontrolle + Manipulationserkennung** | ✅ Hash-verkettetes append-only Log, `verifyChain()` deterministisch | ❌ loggt nach stdout/Konsole, kein unveränderliches Event-Log [W] | ⚠️ OSS loggt nach stdout; strukturiertes Audit nur via **LangSmith**; Self-hosted-Audit existiert, aber Enterprise + closed-source + nur Admin-Aktionen (nicht die Tool-Call-Kette) [L] | ⚠️ Audit nur im **Enterprise-Tier**, nicht im offenen Framework [R] | ❌ kein eingebautes Audit-Log; Default-Tracing geht auf die OpenAI-Plattform [W] | ❌ kein unveränderliches Audit-Log im Kern [W] | ✅* Audit in der **deepset-Enterprise/Sovereign-Stack** (air-gapped) — nicht in der bloßen OSS-Lib [D] | ⚠️ Ausführungs-Historie; tamper-evidenter Audit-Log-Stream erst im Enterprise-Tier [N] |
+| **RBAC auf Tool-Ebene** (welcher User/welche Rolle darf welches Tool) | ✅ Rollen→Tool-Matrix als **Filter vor dem Loop** (Modell sieht verbotene Tools nie), Wildcard/Präfix, **fail-closed** für unbekannte User | ❌ kein Tool-RBAC [W] | ❌ kein eingebautes Tool-RBAC in der OSS-Lib [W] | ⚠️ RBAC nur im **Enterprise-Tier** [R] | ❌ kein eingebautes Tool-RBAC (SDK) [W] | ❌ kein eingebautes Tool-RBAC [W] | ⚠️ RBAC/Multi-Tenancy im **deepset-Enterprise-Stack** [D] | ⚠️ RBAC im **Enterprise-Tier** [N] |
+| **VVT-Auszug aus Tool-Manifesten (DSGVO Art. 30)** | ✅ deklarative Tool-Manifeste (`purpose`/`dataCategories`/`recipients`) + `GET /v1/compliance/vvt` (inkl. `rbacRoles`, Retention; Lücken ehrlich als „(nicht deklariert)") | ❌ kein Art.-30-VVT-Primitiv [W] | ❌ kein Art.-30-VVT-Primitiv [W] | ❌ kein Art.-30-VVT-Primitiv [W] | ❌ kein Art.-30-VVT-Primitiv [W] | ❌ kein Art.-30-VVT-Primitiv [W] | ❌ kein Art.-30-VVT-Primitiv [W] | ❌ kein Art.-30-VVT-Primitiv [W] |
 | **HITL-Approval fail-closed** | ✅ SSE-Freigabe; kein Kanal/Timeout/Fremduser ⇒ **deny fail-closed** | ⚠️ `step_callbacks` / `agent.interrupt()` + Plan-Review, aber interaktiv & in-process, kein serverseitiges fail-closed Tool-Gate [S] | ✅ reifes `interrupt`/`resume` mit Checkpointing (Approval-Pattern) [L] | ⚠️ `human_input` auf Task-Ebene, kein fail-closed Pre-Dispatch-Gate [R] | ✅ `needsApproval` + Run-Interruptions (nicht genehmigt ⇒ Tool läuft nicht) [O] | ⚠️ Workflow `suspend`/`resume` (HITL für Workflows), kein Tool-Dispatch-Gate [M] | ⚠️ Pipeline-Framework; agentisches Approval kein natives Primitiv [D] | ⚠️ via „Wait"/Webhook-Node baubar, kein agentisches fail-closed Gate [N] |
 | **DSGVO-Auskunft/-Löschung per API** | ✅ `GET`/`DELETE /v1/sessions/{id}`, pro User gescoped | ❌ keine Auskunfts-/Lösch-API, In-Process-Memory [W] | ❌ keine Betroffenen-API; unbefristete Checkpoint-Retention = DSGVO-Risiko [W] | ❌ keine eingebaute Betroffenen-API [W] | ❌ keine eingebaute Betroffenen-API (SDK) [W] | ❌ keine eingebaute Betroffenen-API [W] | ⚠️ Enterprise-Data-Governance, keine dokumentierte Per-Subjekt-Lösch-API über den RAG-Index [D] | ❌ keine Per-Subjekt-Lösch-API für Agent-Memory [W] |
 | **KI-Kennzeichnung maschinenlesbar (Art. 50)** | ✅ `aiGenerated:true` + Header `X-AI-Generated`, Disclosure 1. Turn | ❌ kein Art.-50-Primitiv [W] | ❌ kein Art.-50-Primitiv [W] | ❌ kein Art.-50-Primitiv [W] | ❌ kein Art.-50-Primitiv [W] | ❌ kein Art.-50-Primitiv [W] | ❌ kein Art.-50-Primitiv [W] | ❌ kein Art.-50-Primitiv [W] |
@@ -68,6 +70,8 @@ Jede Zeile ist deterministisch prüfbar — kein LLM-Judge. Testkommandos laufen
 |---|---|---|
 | Audit-Log + Manipulationserkennung | `src/audit/audit-log.ts` (`verifyChain`, `pruneOlderThan`), `src/audit/with-audit.ts`, `GET /v1/audit/verify` → `{ok, brokenAtSeq?, events}` | `npm test -- audit-log` — u. a. *„builds a valid, verifiable hash chain across appends"*, *„detects tampering of a row and reports brokenAtSeq"*, *„detects deletion of the last row (chain truncation at the end)"* |
 | HITL-Approval fail-closed | `src/server/agent-server.ts` (`requireApproval`, `streamApproval`, `POST /v1/agent/approvals/{id}`) | `npm test -- approval-gate` — *„deny → tool never runs"*, *„a different user cannot answer the approval (404), timeout denies fail-closed"*, *„non-streaming requests deny gated tools fail-closed"* |
+| RBAC auf Tool-Ebene | `src/server/tool-policy.ts` (`filterToolsForUser`, Wildcard/Präfix, fail-closed), Durchsetzung in `src/server/agent-server.ts` (`toolsForUser`), Env `parseToolPolicy` (`src/server/config.ts`, Datei **oder** inline JSON) | `npm test -- tool-policy rbac-vvt-server` — u. a. *„the viewer role only sees clock.* — forbidden tools are absent from the prompt"*, *„an unmapped user is fail-closed: no tools offered at all"*, *„without a policy every user sees every tool"* |
+| VVT-Auszug (Art. 30) | Tool-`manifest` (`src/types/tool.ts`), `GET /v1/compliance/vvt` → `{name, purpose, dataCategories, recipients, rbacRoles, auditRetentionDays}` | `npm test -- rbac-vvt-server` — *„returns manifest data, gaps and rbac roles"* (inkl. `(nicht deklariert)`), *„requires authentication (401)"* |
 | DSGVO-Auskunft/-Löschung | `GET /v1/sessions/{id}` (Art. 15), `DELETE /v1/sessions/{id}` (Art. 17), userId-gescoped | `npm test -- agent-server` — *„session API: lists, returns and deletes only the caller's sessions"* |
 | KI-Kennzeichnung maschinenlesbar | `agent-server.ts`: `aiGenerated:true` + `X-AI-Generated`-Header + `disclosure` (1. Turn); Opt-out `AI_DISCLOSURE=false` | `npm test -- audit-server` — *„marks answers as AI-generated (field + header) and discloses on the first turn only"*, *„omits the AI-generated field and header when disabled"* |
 | Mandanten-/User-Isolation | `agent-server.ts` + `src/server/auth.ts`: userId ausschließlich aus dem API-Key, Session-Key `userId:sessionId` | `npm test -- agent-server` — *„isolates sessions between users sharing the same sessionId"*, *„concurrency smoke: 20 parallel requests from 2 users over a real SQLite file stay isolated"* |
@@ -107,10 +111,6 @@ Nachprüfbarkeit heißt auch, die eigenen Lücken zu benennen.
 - **Kein WORM-Storage.** Der Audit-Log ist append-only + hash-verkettet
   (Manipulation *nachweisbar*), aber liegt in einer normalen SQLite-Datei — kein
   hardware-seitiges Write-Once-Read-Many, das Manipulation *verhindert*.
-- **Kein RBAC auf Tool-Ebene.** User-/Mandanten-Isolation ist vorhanden, aber es
-  gibt keine Rollen→Tool-Berechtigungsmatrix (Checkliste #5: „welcher Nutzer darf
-  welches ERP-/Fileserver-Tool"). Freigabe ist heute pro Tool-Name global, nicht
-  pro Rolle.
 - **Kein automatischer Prune-Scheduler.** `pruneOlderThan()` existiert und ist
   getestet, muss aber extern getriggert werden (Cron/systemd-Timer) — kein
   eingebauter Retention-Scheduler.
@@ -118,8 +118,10 @@ Nachprüfbarkeit heißt auch, die eigenen Lücken zu benennen.
   Rohdaten (Audit-Log, Tool-Registry) liegen vor, aber ein generierbarer
   Einsatz-Report für den Betriebsrat fehlt.
 
-Diese vier Punkte sind bewusste Scope-Grenzen des „minimalen" Ansatzes, keine
+Diese drei Punkte sind bewusste Scope-Grenzen des „minimalen" Ansatzes, keine
 verdeckten Mängel — sie stehen hier, damit die Matrix nachprüfbar bleibt.
+(RBAC auf Tool-Ebene, zuvor hier gelistet, ist inzwischen umgesetzt — siehe
+Matrix-Zeile „RBAC auf Tool-Ebene" und `src/server/tool-policy.ts`.)
 
 ## Quellen
 

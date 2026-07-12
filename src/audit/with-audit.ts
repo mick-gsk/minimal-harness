@@ -15,9 +15,9 @@ export interface AuditContext {
  */
 export function withAudit(tools: ToolDefinition[], auditLog: AuditLog, ctx: AuditContext): ToolDefinition[] {
   return tools.map((tool) => ({
-    name: tool.name,
-    description: tool.description,
-    inputSchema: tool.inputSchema,
+    // Spread erhält optionale Metadaten (z. B. `manifest`); nur execute wird
+    // umhüllt, alles andere bleibt unverändert.
+    ...tool,
     async execute(input: unknown): Promise<unknown> {
       auditLog.append({ ...ctx, event: "tool_call", payload: { tool: tool.name, arguments: input } });
       try {

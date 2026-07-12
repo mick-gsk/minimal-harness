@@ -11,8 +11,14 @@ import type { ToolDefinition, ToolInputSchema } from "../types/tool.js";
 import type { ToolBridge } from "../types/tool.js";
 import { logger } from "../utils/logger.js";
 import { ApiKeyAuth } from "./auth.js";
-import { AuditLog } from "../audit/audit-log.js";
+import { AuditLog, DEFAULT_RETENTION_DAYS } from "../audit/audit-log.js";
 import { withAudit, type AuditContext } from "../audit/with-audit.js";
+import {
+  filterToolsForUser,
+  effectiveRole,
+  rolesForTool,
+  type ToolPolicy,
+} from "./tool-policy.js";
 
 export interface AgentServerOptions {
   llm: LLMAdapter;
@@ -49,6 +55,14 @@ export interface AgentServerOptions {
    * text — response metadata only, so benchmarks stay unaffected.
    */
   aiDisclosure?: boolean;
+  /**
+   * Tool-level RBAC (NIS2, DSGVO Art. 32): a role→tool permission matrix.
+   * Each user only ever gets the tools their role allows into their ToolBridge,
+   * so the model never even sees a forbidden tool. Without this option every
+   * authenticated user may use every tool (no breaking change). See
+   * `parseToolPolicy` for the TOOL_POLICY env format.
+   */
+  toolPolicy?: ToolPolicy;
 }
 
 /** Human-readable disclosure per Art. 50(1) — surfaced once per session. */
@@ -121,13 +135,25 @@ export function createAgentServer(options: AgentServerOptions): Server {
 
   const auditLog = options.auditDb ? new AuditLog(options.auditDb) : undefined;
   const aiDisclosure = options.aiDisclosure ?? true;
+  const toolPolicy = options.toolPolicy;
+
+  // RBAC filter, applied *before the loop*: a user's bridge only contains the
+  // tools their role allows (least privilege, fail-closed for unknown users).
+  // Without a policy this returns every tool unchanged.
+  function toolsForUser(userId: string): ToolDefinition[] {
+    return filterToolsForUser(toolPolicy, userId, options.tools);
+  }
+
+  function bridgeFromTools(tools: ToolDefinition[]): ToolBridge {
+    const bridge = new DefaultToolBridge();
+    for (const tool of tools) bridge.register(tool);
+    return bridge;
+  }
 
   // Per-request tool bridge whose tools log every call+result into the audit
   // chain (the shared bridge stays untouched, so non-audited runs are unchanged).
-  function auditedBridge(ctx: AuditContext): ToolBridge {
-    const bridge = new DefaultToolBridge();
-    for (const tool of withAudit(options.tools, auditLog!, ctx)) bridge.register(tool);
-    return bridge;
+  function auditedBridge(ctx: AuditContext, tools: ToolDefinition[]): ToolBridge {
+    return bridgeFromTools(withAudit(tools, auditLog!, ctx));
   }
 
   // Wraps a base approval callback so approve/deny decisions are also audited.
@@ -160,9 +186,9 @@ export function createAgentServer(options: AgentServerOptions): Server {
 
   // Non-streaming requests have no channel to ask a human — gated tools are
   // denied fail-closed rather than executed silently.
-  const loop = buildLoop(
-    requireApproval.size > 0 ? async (call) => !requireApproval.has(call.name) : undefined,
-  );
+  const denyGated: ApprovalFn | undefined =
+    requireApproval.size > 0 ? async (call) => !requireApproval.has(call.name) : undefined;
+  const loop = buildLoop(denyGated);
 
   return createServer((req, res) => {
     // Normalized route label (ids collapsed) keeps metrics cardinality bounded.
@@ -205,6 +231,26 @@ export function createAgentServer(options: AgentServerOptions): Server {
       if (!auditLog) return sendJson(res, 501, { error: "audit log is not enabled (set auditDb / AUDIT_DB)" });
       const result = auditLog.verifyChain();
       return sendJson(res, 200, { ...result, events: auditLog.countEvents() });
+    }
+
+    // VVT-Baustein (DSGVO Art. 30): pro registriertem Tool Zweck, Datenkategorien,
+    // Empfänger, welche Rollen es nutzen dürfen (RBAC) und die Audit-Retention.
+    // Tools ohne Manifest erscheinen mit purpose "(nicht deklariert)" — der Report
+    // zeigt die Doku-Lücke ehrlich statt sie zu verstecken. Authentifiziert.
+    if (req.url === "/v1/compliance/vvt") {
+      if (req.method !== "GET") return sendJson(res, 405, { error: "method not allowed" });
+      const userId = auth.resolveUser(req.headers.authorization);
+      if (!userId) return sendJson(res, 401, { error: "invalid or missing API key" });
+      const records = options.tools.map((tool) => ({
+        name: tool.name,
+        purpose: tool.manifest?.purpose ?? "(nicht deklariert)",
+        dataCategories: tool.manifest?.dataCategories ?? [],
+        recipients: tool.manifest?.recipients ?? [],
+        // Ohne Policy darf jeder authentifizierte User jedes Tool nutzen ("*").
+        rbacRoles: toolPolicy ? rolesForTool(toolPolicy, tool.name) : ["*"],
+        ...(auditLog ? { auditRetentionDays: DEFAULT_RETENTION_DAYS } : {}),
+      }));
+      return sendJson(res, 200, { generatedAt: new Date().toISOString(), records });
     }
 
     if (req.url?.startsWith("/v1/agent/approvals/")) {
@@ -256,11 +302,25 @@ export function createAgentServer(options: AgentServerOptions): Server {
       // First turn (before this run writes to memory) → disclosure per Art. 50.
       const firstTurn = aiDisclosure ? (await options.memory.get(sessionId)).messages.length === 0 : false;
 
+      // RBAC filter runs before the loop: the user's bridge holds only allowed tools.
+      const effectiveTools = toolsForUser(userId);
+
+      // Accountability (Art. 5(2)): record the user's effective role + granted
+      // toolset at run_start when auditing is active.
+      if (auditLog) {
+        auditLog.append({
+          ...ctx,
+          event: "run_start",
+          payload: { maxTurns, role: effectiveRole(toolPolicy, userId), tools: effectiveTools.map((t) => t.name) },
+        });
+      }
+
       let runLoop = loop;
       if (auditLog) {
-        auditLog.append({ ...ctx, event: "run_start", payload: { maxTurns } });
-        const base = requireApproval.size > 0 ? async (call: { name: string }) => !requireApproval.has(call.name) : undefined;
-        runLoop = buildLoop(auditApproval(base, ctx), auditedBridge(ctx));
+        runLoop = buildLoop(auditApproval(denyGated, ctx), auditedBridge(ctx, effectiveTools));
+      } else if (toolPolicy) {
+        // RBAC without audit still needs a per-user filtered bridge.
+        runLoop = buildLoop(denyGated, bridgeFromTools(effectiveTools));
       }
 
       const startedAt = Date.now();
@@ -405,13 +465,22 @@ export function createAgentServer(options: AgentServerOptions): Server {
           }
         : undefined;
 
-    if (auditLog) auditLog.append({ ...ctx, event: "run_start", payload: { maxTurns } });
+    const effectiveTools = toolsForUser(userId);
+    if (auditLog) {
+      auditLog.append({
+        ...ctx,
+        event: "run_start",
+        payload: { maxTurns, role: effectiveRole(toolPolicy, userId), tools: effectiveTools.map((t) => t.name) },
+      });
+    }
     const requestLoop =
       auditLog !== undefined
-        ? buildLoop(auditApproval(streamApproval, ctx), auditedBridge(ctx))
-        : streamApproval
-          ? buildLoop(streamApproval)
-          : loop;
+        ? buildLoop(auditApproval(streamApproval, ctx), auditedBridge(ctx, effectiveTools))
+        : toolPolicy
+          ? buildLoop(streamApproval, bridgeFromTools(effectiveTools))
+          : streamApproval
+            ? buildLoop(streamApproval)
+            : loop;
 
     try {
       const result = await requestLoop.run({
