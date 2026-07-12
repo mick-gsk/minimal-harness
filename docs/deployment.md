@@ -64,6 +64,28 @@ Modelle einmalig laden: `docker compose exec ollama ollama pull qwen3:8b`
 | `AUDIT_DB` | nein | — | SQLite-Datei; aktiviert das revisionssichere Audit-Log (Art. 12/19) |
 | `AI_DISCLOSURE` | nein | `true` | KI-Kennzeichnung der Antworten (Art. 50); `false` deaktiviert sie |
 | `TOOL_POLICY` | nein | — | Tool-RBAC (NIS2/Art. 32): Pfad zu einer JSON-Datei (empfohlen) **oder** inline JSON `{roles, userRoles}`; ohne Angabe darf jeder User jedes Tool |
+| `AGENT_PRESET` | nein | — | Workload-Preset `recherche` \| `daten`; bündelt die gemessen beste Config je Aufgabenklasse (s. u.). Ohne Angabe: Verhalten unverändert |
+
+## Welches Preset wofür (gemessen)
+
+Kein einzelner Arm gewinnt alle Aufgabenklassen — die Ablations-Kampagne
+(`docs/mittelstand-validierung.md`, „Kampagne Tag 2", qwen3:8b) zeigt: die beste
+Config hängt an der Fragenklasse. `AGENT_PRESET` setzt das jeweils gemessen
+beste Bündel, statt dass ein Kunde es selbst herausmisst. Einzeloptionen des
+Servers übersteuern das Preset (Default-Bündel, kein Zwang).
+
+| Preset | Setzt | Wofür | Messbeleg |
+|---|---|---|---|
+| `recherche` | `verifyFinalAnswer` an; `knowledge.search` bleibt (falls `KNOWLEDGE_DB` gesetzt) | Kern-Recherche in Text/Mail/ERP, Wissensmanagement | `rag+verify` ist der Bestwert: **26/48 (54 %)** pass@1, Verweigerung **6/6**. Der Verifier holt die Verweigerungsdisziplin zurück, die RAG allein auf 5/6 kippt |
+| `daten` | `scaffold` + `verifyFinalAnswer` an; `knowledge.search` **entfernt** (auch bei gesetztem `KNOWLEDGE_DB`) | System­übergreifende Joins / Daten-/Tabellen­fragen | RAG **verschlechtert** Join-Fragen und kippt eine Verweigerungs-Falle (semantische Treffer verleiten zur Halluzination): scaffold **6/15** vs. rag+verify **3/15**, Verweigerung s06 nur **1/3**. `daten` hält den Retrieval-Arm daher bewusst fern |
+
+**Kein `extraktion`-Preset (bewusste Entscheidung):** Für strukturierte
+Extraktion ist `responseSchema` der Hebel — ein **pro Request** übergebener
+Vertrag, den der Loop bereits Ende-zu-Ende erzwingt (Schema im Prompt, Parsing,
+Korrektur-Retry; gemessen 100/100 Felder, s. Validierung 6c). `verifyFinalAnswer`
+greift nur, wenn ein Tool lief — Extraktionsläufe haben keins. Es bleibt also
+**kein serverweites Bündel** zu setzen; zwei ehrliche Presets sind besser als
+drei halbe.
 
 ## Hardware-Planung (VRAM)
 

@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { assertToolPolicy, type ToolPolicy } from "./tool-policy.js";
+import type { WorkloadPreset } from "./agent-server.js";
 
 /**
  * Parses the API_KEYS env format "key1:user1,key2:user2" — fail fast on
@@ -58,4 +59,21 @@ export function parseToolPolicy(raw: string | undefined): ToolPolicy | undefined
   }
   assertToolPolicy(parsed);
   return parsed;
+}
+
+/** Valid AGENT_PRESET values — must match {@link WorkloadPreset} exactly. */
+const WORKLOAD_PRESETS: readonly WorkloadPreset[] = ["recherche", "daten"];
+
+/**
+ * Reads the AGENT_PRESET env var. Undefined/empty → no preset (unchanged
+ * behavior). An unknown value fails fast: a typo like "rechreche" must never
+ * boot silently as "no preset" and quietly ship the wrong config.
+ */
+export function parsePreset(raw: string | undefined): WorkloadPreset | undefined {
+  if (!raw || raw.trim() === "") return undefined;
+  const value = raw.trim() as WorkloadPreset;
+  if (!WORKLOAD_PRESETS.includes(value)) {
+    throw new Error(`AGENT_PRESET must be one of ${WORKLOAD_PRESETS.join(", ")} (got '${raw.trim()}')`);
+  }
+  return value;
 }

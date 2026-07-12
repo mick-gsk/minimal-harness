@@ -20,6 +20,17 @@ import {
   type ToolPolicy,
 } from "./tool-policy.js";
 
+/**
+ * Workload presets bundle the *measured* best config per task class, so a
+ * customer picks one word instead of re-running the ablation campaign. Each
+ * value maps to the winning arm from docs/mittelstand-validierung.md
+ * ("Kampagne Tag 2", 2026-07-12). See {@link resolvePreset}.
+ */
+export type WorkloadPreset = "recherche" | "daten";
+
+/** Name of the RAG tool a preset may bundle in or filter out. */
+const KNOWLEDGE_SEARCH_TOOL = "knowledge.search";
+
 export interface AgentServerOptions {
   llm: LLMAdapter;
   tools: ToolDefinition[];
@@ -63,6 +74,79 @@ export interface AgentServerOptions {
    * `parseToolPolicy` for the TOOL_POLICY env format.
    */
   toolPolicy?: ToolPolicy;
+  /**
+   * Workload preset (env `AGENT_PRESET`): sets the measured-best default bundle
+   * for a task class. Explicit `verifyFinalAnswer`/`scaffold` below override the
+   * preset (preset = default bundle, not a straitjacket). Without a preset the
+   * server behaves exactly as before. See {@link WorkloadPreset} / {@link resolvePreset}.
+   */
+  preset?: WorkloadPreset;
+  /**
+   * Re-check the final answer against the tool results before returning it (one
+   * extra LLM call, only when a tool was used). Catches mental-math slips and,
+   * combined with RAG, restores refusal discipline to 6/6. Default off; a preset
+   * may turn it on, an explicit value here always wins.
+   */
+  verifyFinalAnswer?: boolean;
+  /**
+   * Persistence scaffold (plan→execute→verify→recover, text-protocol only) for
+   * backends without native tool-calling that give up early. Default off; the
+   * `daten` preset turns it on, an explicit value here always wins. Cannot be
+   * combined with `nativeToolCalling` (the loop refuses a half scaffold).
+   */
+  scaffold?: boolean | { rePlanEvery?: number };
+}
+
+/** The effective config a preset (plus explicit overrides) resolves to. */
+interface ResolvedPreset {
+  verifyFinalAnswer: boolean;
+  scaffold: boolean | { rePlanEvery?: number } | undefined;
+  /** Drop the knowledge.search RAG tool even when the caller registered one. */
+  dropKnowledgeSearch: boolean;
+}
+
+/**
+ * Turns a preset + explicit overrides into the concrete config the server runs.
+ * Measured basis (docs/mittelstand-validierung.md, Kampagne Tag 2, qwen3:8b):
+ *
+ *  - `recherche`: verifyFinalAnswer on, RAG tool kept. `rag+verify` is the best
+ *    core-research arm — 26/48 (54 %) pass@1, refusal 6/6. The verifier is what
+ *    pulls refusal back to 6/6 (RAG alone flips one trap to 5/6).
+ *  - `daten`: scaffold + verifyFinalAnswer on, RAG tool REMOVED even if
+ *    registered. On cross-system join questions RAG makes it worse and flips a
+ *    refusal trap — semantic hits tempt the model into hallucination: scaffold
+ *    6/15 vs. rag+verify 3/15, refusal s06 only 1/3. So `daten` deliberately
+ *    withholds knowledge.search.
+ *
+ * (No `extraktion` preset: `responseSchema` is a per-request contract the loop
+ *  already enforces end-to-end, and verifyFinalAnswer only fires when a tool ran
+ *  — extraction runs have none. There is no server-level bundle left to set, so
+ *  two honest presets beat three half ones. Documented in docs/deployment.md.)
+ *
+ * `??` means an explicitly set option always overrides the preset default;
+ * `scaffold: false` under `daten` genuinely disables the scaffold.
+ */
+export function resolvePreset(options: AgentServerOptions): ResolvedPreset {
+  let verifyDefault = false;
+  let scaffoldDefault: boolean | { rePlanEvery?: number } | undefined;
+  let dropKnowledgeSearch = false;
+  switch (options.preset) {
+    case "recherche":
+      verifyDefault = true;
+      break;
+    case "daten":
+      verifyDefault = true;
+      scaffoldDefault = true;
+      dropKnowledgeSearch = true;
+      break;
+    case undefined:
+      break;
+  }
+  return {
+    verifyFinalAnswer: options.verifyFinalAnswer ?? verifyDefault,
+    scaffold: options.scaffold ?? scaffoldDefault,
+    dropKnowledgeSearch,
+  };
 }
 
 /** Human-readable disclosure per Art. 50(1) — surfaced once per session. */
@@ -126,8 +210,26 @@ export function createAgentServer(options: AgentServerOptions): Server {
   const maxTurnsCeiling = options.maxTurns ?? 10;
   const metrics = new Metrics();
 
+  // Resolve the workload preset once: verify/scaffold defaults and whether the
+  // RAG tool is withheld. Explicit options already won inside resolvePreset.
+  const { verifyFinalAnswer, scaffold: defaultScaffold, dropKnowledgeSearch } = resolvePreset(options);
+  if (defaultScaffold && options.nativeToolCalling) {
+    // Fail fast at boot, not per request: a half scaffold measured worse than
+    // none, so the loop refuses the combination — surface it as a config error.
+    throw new Error(
+      "scaffold (preset 'daten' or scaffold: true) is text-protocol only and cannot be combined with nativeToolCalling",
+    );
+  }
+  // The tool set this server actually exposes — the `daten` preset removes the
+  // RAG tool because it hurts join questions (see resolvePreset). This filtered
+  // list feeds the bridge, RBAC and the VVT report alike, so a withheld tool is
+  // invisible everywhere, not just at call time.
+  const serverTools = dropKnowledgeSearch
+    ? options.tools.filter((t) => t.name !== KNOWLEDGE_SEARCH_TOOL)
+    : options.tools;
+
   const toolBridge = new DefaultToolBridge();
-  for (const tool of options.tools) toolBridge.register(tool);
+  for (const tool of serverTools) toolBridge.register(tool);
 
   const requireApproval = new Set(options.requireApproval ?? []);
   const approvalTimeoutMs = options.approvalTimeoutMs ?? 120_000;
@@ -141,7 +243,7 @@ export function createAgentServer(options: AgentServerOptions): Server {
   // tools their role allows (least privilege, fail-closed for unknown users).
   // Without a policy this returns every tool unchanged.
   function toolsForUser(userId: string): ToolDefinition[] {
-    return filterToolsForUser(toolPolicy, userId, options.tools);
+    return filterToolsForUser(toolPolicy, userId, serverTools);
   }
 
   function bridgeFromTools(tools: ToolDefinition[]): ToolBridge {
@@ -180,6 +282,7 @@ export function createAgentServer(options: AgentServerOptions): Server {
       ...(options.systemInstruction !== undefined ? { systemInstruction: options.systemInstruction } : {}),
       ...(options.nativeToolCalling !== undefined ? { nativeToolCalling: options.nativeToolCalling } : {}),
       ...(options.parallelToolCalls !== undefined ? { parallelToolCalls: options.parallelToolCalls } : {}),
+      ...(verifyFinalAnswer ? { verifyFinalAnswer: true } : {}),
       ...(onToolApproval ? { onToolApproval } : {}),
     });
   }
@@ -241,7 +344,7 @@ export function createAgentServer(options: AgentServerOptions): Server {
       if (req.method !== "GET") return sendJson(res, 405, { error: "method not allowed" });
       const userId = auth.resolveUser(req.headers.authorization);
       if (!userId) return sendJson(res, 401, { error: "invalid or missing API key" });
-      const records = options.tools.map((tool) => ({
+      const records = serverTools.map((tool) => ({
         name: tool.name,
         purpose: tool.manifest?.purpose ?? "(nicht deklariert)",
         dataCategories: tool.manifest?.dataCategories ?? [],
@@ -329,6 +432,7 @@ export function createAgentServer(options: AgentServerOptions): Server {
           sessionId,
           userMessage: body.message,
           maxTurns,
+          ...(defaultScaffold !== undefined ? { scaffold: defaultScaffold } : {}),
           ...(body.responseSchema ? { responseSchema: body.responseSchema } : {}),
         });
         if (auditLog) {
@@ -487,6 +591,7 @@ export function createAgentServer(options: AgentServerOptions): Server {
         sessionId,
         userMessage,
         maxTurns,
+        ...(defaultScaffold !== undefined ? { scaffold: defaultScaffold } : {}),
         onToken: (chunk) => send("token", { chunk }),
       });
       if (auditLog) {
