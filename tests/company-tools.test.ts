@@ -88,7 +88,28 @@ describe("company tools", () => {
     const none = (await search.execute({ query: "gibtesnicht" })) as { matches: string[]; note?: string };
     expect(none.matches).toHaveLength(0);
     expect(none.note).toMatch(/no matches/);
-    await expect(search.execute({ query: "Nachlass", path: ".." })).rejects.toThrow(/escapes/);
+    await expect(search.execute({ query: "Nachlass", dir: ".." })).rejects.toThrow(/escapes/);
+  });
+
+  it("fs.search scopes results to the given dir subfolder", async () => {
+    const search = makeFsSearchTool(root);
+    // Same term ("Größe") lives both under fileserver/ (utf8.txt) and at the
+    // corpus root would-be elsewhere; a dir-scoped search must only see the subtree.
+    mkdirSync(join(root, "mail"), { recursive: true });
+    writeFileSync(join(root, "mail", "note.eml"), "Größe der Lieferung\n");
+    const scoped = (await search.execute({ query: "Größe", dir: "mail" })) as { matches: string[] };
+    expect(scoped.matches.some((m) => m.startsWith("mail/note.eml"))).toBe(true);
+    expect(scoped.matches.some((m) => m.includes("fileserver/"))).toBe(false);
+    // Regression: without dir, the fileserver hit is still found.
+    const all = (await search.execute({ query: "Größe" })) as { matches: string[] };
+    expect(all.matches.some((m) => m.includes("fileserver/utf8.txt"))).toBe(true);
+  });
+
+  it("fs.search rejects an unknown dir with the list of top-level folders", async () => {
+    const search = makeFsSearchTool(root);
+    await expect(search.execute({ query: "egal", dir: "gibtesnicht" })).rejects.toThrow(
+      /unknown folder "gibtesnicht".*available top-level folders:.*fileserver/s,
+    );
   });
 
   it("decodeSmart falls back to windows-1252 only when utf-8 breaks", () => {

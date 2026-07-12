@@ -153,16 +153,17 @@ function walkFiles(root: string, dir: string, out: string[]): void {
   }
 }
 
-export function makeFsSearchTool(root: string): ToolDefinition<{ query: string; path?: string }, { matches: string[]; note?: string }> {
+export function makeFsSearchTool(root: string): ToolDefinition<{ query: string; dir?: string }, { matches: string[]; note?: string }> {
   return {
     name: "fs.search",
     description:
-      "Full-text search across ALL company files (fileserver/, mail/, ad/, dms/, bde/, datev/, pdm/), including the text inside .xlsx/.docx/.pdf — like the search box on the fileserver. Case-insensitive; multiple terms are AND-combined per file; returns 'path:line: excerpt'. Use this to locate documents before reading them.",
+      "Full-text search across ALL company files (fileserver/, mail/, ad/, dms/, bde/, datev/, pdm/), including the text inside .xlsx/.docx/.pdf — like the search box on the fileserver. Case-insensitive; multiple terms are AND-combined per file; returns 'path:line: excerpt'. Use this to locate documents before reading them. " +
+      "Pass `dir` to restrict the search to one folder and cut noise, e.g. {\"query\":\"Preisliste\",\"dir\":\"fileserver/QM\"}.",
     inputSchema: {
       type: "object",
       properties: {
         query: { type: "string", description: "Search terms, e.g. 'DF-12040 Wittenbrink'. Multiple terms are AND-combined per file." },
-        path: { type: "string", description: "Optional: limit to a subtree, e.g. 'mail'." },
+        dir: { type: "string", description: "Optional: limit the search to a corpus subfolder, e.g. 'fileserver/QM' or 'mail'. Omit to search everything." },
       },
       required: ["query"],
       additionalProperties: false,
@@ -172,7 +173,15 @@ export function makeFsSearchTool(root: string): ToolDefinition<{ query: string; 
       // (Outlook, Windows search) ANDs terms at file level — so do we.
       const terms = input.query.toLowerCase().split(/\s+/).filter((t) => t.length >= 2);
       if (terms.length === 0) throw new Error("query too short — use at least 2 characters");
-      const base = resolveInside(root, input.path ?? ".");
+      const base = resolveInside(root, input.dir ?? ".");
+      // A non-existent dir would otherwise fail deep in walkFiles with an opaque
+      // ENOENT; models recover far better from the list of folders that do exist.
+      if (input.dir !== undefined && (!existsSync(base) || !statSync(base).isDirectory())) {
+        const folders = readdirSync(root)
+          .filter((n) => statSync(join(root, n)).isDirectory())
+          .sort();
+        throw new Error(`unknown folder "${input.dir}" — available top-level folders: ${folders.join(", ")}`);
+      }
       const files: string[] = [];
       walkFiles(root, base, files);
       const matches: string[] = [];
