@@ -37,20 +37,24 @@ export interface AgentLoopInput {
    * agent stops repeating the same failed call). Default off — no other mode
    * changes without this flag.
    *
-   * Two stages (see agent-loop.ts):
-   *  - Deterministic (always when active): tool results older than
-   *    `keepRecentTurns` turns are replaced in-history by a compact summary
-   *    (first lines + a truncation marker). No LLM call, no loss of the WHAT.
-   *  - LLM fallback (only when needed): if the estimated prompt still exceeds a
-   *    budget derived from `numCtx`, one LLM call folds the oldest half of the
-   *    history into a structured "Merkzettel". Its failure keeps stage 1 — no
-   *    crash.
+   * Fully budget-gated (fixed after an always-on stage 1 measured HARMFUL —
+   * 21 % vs 44–48 % — by evicting evidence that would have fit; the ACON uplift
+   * only holds for overflowing contexts). When the estimated prompt fits the
+   * `numCtx`-derived budget the history passes through UNTOUCHED (byte-identical
+   * to leaving the flag off). Only on overflow:
+   *  - Deterministic stage: tool results are replaced in-history by a compact
+   *    summary (first lines + a truncation marker), OLDEST-first and only as
+   *    many as needed to drop back under budget. The last `keepRecentTurns`
+   *    turns are never touched. No LLM call, no loss of the WHAT.
+   *  - LLM fallback (only when the deterministic stage cannot free enough): one
+   *    LLM call folds the oldest half of the history into a structured
+   *    "Merkzettel". Its failure keeps the deterministic stage — no crash.
    *
    * Orthogonal to the text protocol, nativeToolCalling and scaffold — it only
    * reshapes the prompt history and combines with all of them.
    */
   contextCompaction?: {
-    /** Keep the last N tool-result turns verbatim; older ones are truncated. Default 3. */
+    /** Floor of recent tool-result turns kept verbatim no matter what; older ones are truncated only on budget overflow. Default 3. */
     keepRecentTurns?: number;
     /**
      * Backend context window in tokens, used to size the stage-2 trigger.

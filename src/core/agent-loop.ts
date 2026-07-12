@@ -43,8 +43,9 @@ function normalizeScaffold(flag: boolean | { rePlanEvery?: number } | undefined)
 }
 
 /**
- * Resolved context-compaction config (arXiv 2510.00615 ACON). `keepRecentTurns`
- * governs the deterministic stage; `thresholdChars` the LLM fallback stage.
+ * Resolved context-compaction config (arXiv 2510.00615 ACON). `thresholdChars`
+ * is the single budget both stages are gated on; `keepRecentTurns` is the lower
+ * bound of tool-result turns stage 1 will never touch.
  */
 interface CompactionConfig {
   keepRecentTurns: number;
@@ -52,12 +53,15 @@ interface CompactionConfig {
 }
 
 /**
- * Keep the last 3 tool-result turns verbatim. Why 3: the model almost always
- * needs the immediately preceding observation (to act on it) and one or two
- * before it (to cross-check / avoid re-issuing a call). Older results have
- * already done their job — their DETAIL is dead weight, only their WHAT matters
- * (which the deterministic summary preserves). Lower risks evicting a still-live
- * result; higher barely compresses.
+ * Lower bound of recent tool-result turns kept verbatim NO MATTER WHAT — stage 1
+ * never truncates the last 3 turns even under budget pressure. Why 3: the model
+ * almost always needs the immediately preceding observation (to act on it) and
+ * one or two before it (to cross-check / avoid re-issuing a call). Older results
+ * beyond this floor are only truncated when the prompt actually overflows the
+ * budget, oldest-first and just enough — never pre-emptively. (Empirical: an
+ * always-on stage 1 measured HARMFUL — 21 % vs 44–48 % — because it evicted
+ * evidence that would have fit; the ACON uplift only holds for overflowing
+ * contexts.)
  */
 const DEFAULT_KEEP_RECENT_TURNS = 3;
 /** Backend context window assumed when the caller does not pass one — the bench/company Ollama config. */
@@ -75,10 +79,12 @@ const COMPACTION_HEAD_LINES = 5;
  */
 const CHARS_PER_TOKEN = 4;
 /**
- * Stage 2 fires when the estimated prompt would fill more than 70 % of numCtx —
- * i.e. once less than ~30 % of the window is left for the model's thinking +
- * answer (qwen3 think mode is token-heavy). Below this, stage 1 alone is assumed
- * sufficient and the extra summary call is not worth its cost.
+ * Compaction fires only once the estimated prompt would fill more than 70 % of
+ * numCtx — i.e. once less than ~30 % of the window is left for the model's
+ * thinking + answer (qwen3 think mode is token-heavy). This single fraction
+ * gates BOTH stages: below it, the history is passed through untouched (never
+ * truncate what fits); above it, stage 1 truncates oldest-first just enough to
+ * drop back under, and stage 2 escalates only if stage 1 cannot free enough.
  */
 const PROMPT_BUDGET_FRACTION = 0.7;
 
@@ -142,15 +148,22 @@ function estimatePromptChars(prompt: { content: string }[]): number {
 }
 
 /**
- * Stage 1 (deterministic): replace tool results older than `keepRecentTurns`
- * turns with a compact summary. Consecutive tool messages form one turn's
- * observations (parallel tool calls land back-to-back), so the last
- * `keepRecentTurns` such groups stay verbatim and everything older is truncated.
+ * Stage 1 (deterministic, budget-gated & incremental): truncate the OLDEST
+ * tool-result groups first, one group at a time, and stop the instant
+ * `isUnderBudget` reports the rebuilt prompt fits — so only as many old
+ * observations are compacted as the overflow actually requires. Consecutive
+ * tool messages form one turn's observations (parallel tool calls land
+ * back-to-back); the last `keepRecentTurns` such groups are the untouchable
+ * floor. When the prompt already fits, nothing is truncated at all (the caller
+ * short-circuits before ever calling this). When even truncating everything
+ * above the floor is not enough, the fully-truncated history is returned for
+ * stage 2 to escalate.
  */
 function truncateOldObservations<T extends { role: string; content: string }>(
   messages: T[],
   keepRecentTurns: number,
   headLines: number,
+  isUnderBudget: (msgs: T[]) => boolean,
 ): T[] {
   // Group indices of tool messages by turn (a run of adjacent tool messages).
   const groups: number[][] = [];
@@ -164,13 +177,20 @@ function truncateOldObservations<T extends { role: string; content: string }>(
   }
   const cutoff = groups.length - keepRecentTurns;
   if (cutoff <= 0) return messages;
+  // Add one older group per iteration (oldest-first), re-truncate from scratch,
+  // and stop as soon as the budget is met — the minimal compaction that fits.
   const oldIndices = new Set<number>();
-  for (let g = 0; g < cutoff; g++) for (const idx of groups[g]!) oldIndices.add(idx);
-  return messages.map((m, i) =>
-    oldIndices.has(i)
-      ? ({ ...m, content: summarizeToolResult(m.content, messages[i - 1]?.content, headLines) } as T)
-      : m,
-  );
+  let result = messages;
+  for (let g = 0; g < cutoff; g++) {
+    for (const idx of groups[g]!) oldIndices.add(idx);
+    result = messages.map((m, i) =>
+      oldIndices.has(i)
+        ? ({ ...m, content: summarizeToolResult(m.content, messages[i - 1]?.content, headLines) } as T)
+        : m,
+    );
+    if (isUnderBudget(result)) break;
+  }
+  return result;
 }
 
 /**
@@ -381,36 +401,59 @@ export class DefaultAgentLoop implements AgentLoop {
     compaction?: CompactionConfig,
   ): Promise<ChatMessage[]> {
     const state = await this.deps.memory.get(sessionId);
-    // Stage 1 of opt-in compaction runs BEFORE the maxContextMessages fold so
-    // even the extractive summary of very old turns uses truncated observations.
-    const messages = compaction
-      ? truncateOldObservations(state.messages, compaction.keepRecentTurns, COMPACTION_HEAD_LINES)
-      : state.messages;
-    let recentMessages = messages;
-    let memorySummary = state.summary;
-    if (messages.length > this.maxContextMessages) {
-      const olderCount = messages.length - this.maxContextMessages;
-      const older = messages.slice(0, olderCount);
-      recentMessages = messages.slice(olderCount);
-      const folded = extractiveSummary(older, older.length);
-      memorySummary = state.summary ? `${state.summary}\n${folded}` : folded;
+    // Assemble a prompt from a given history: fold everything older than
+    // maxContextMessages into the extractive summary, then lay it out. Pure in
+    // `messages`, so the compaction gate can rebuild-and-measure candidates.
+    const buildPrompt = (messages: typeof state.messages): ChatMessage[] => {
+      let recentMessages = messages;
+      let memorySummary = state.summary;
+      if (messages.length > this.maxContextMessages) {
+        const olderCount = messages.length - this.maxContextMessages;
+        const older = messages.slice(0, olderCount);
+        recentMessages = messages.slice(olderCount);
+        const folded = extractiveSummary(older, older.length);
+        memorySummary = state.summary ? `${state.summary}\n${folded}` : folded;
+      }
+      return this.deps.promptBuilder.build({
+        systemInstruction,
+        // In native mode the tool specs travel via the API; the text protocol
+        // block would only burn tokens the model never uses.
+        toolDescriptions: this.deps.nativeToolCalling
+          ? []
+          : this.deps.toolBridge.list().map((t) => `- **${t.name}**: ${t.description}`),
+        ...(memorySummary ? { memorySummary } : {}),
+        recentMessages,
+      });
+    };
+
+    const prompt = buildPrompt(state.messages);
+    // No compaction, or the prompt already fits: pass the history through
+    // untouched. WITH the flag under budget this is byte-identical to WITHOUT
+    // it — the core guarantee, since an always-on stage 1 measured harmful.
+    if (!compaction || estimatePromptChars(prompt) <= compaction.thresholdChars) {
+      return prompt;
     }
-    const prompt = this.deps.promptBuilder.build({
-      systemInstruction,
-      // In native mode the tool specs travel via the API; the text protocol
-      // block would only burn tokens the model never uses.
-      toolDescriptions: this.deps.nativeToolCalling
-        ? []
-        : this.deps.toolBridge.list().map((t) => `- **${t.name}**: ${t.description}`),
-      ...(memorySummary ? { memorySummary } : {}),
-      recentMessages,
-    });
-    // Stage 2 (LLM fallback): only when stage 1 did not bring the prompt under
-    // the numCtx-derived budget. A failed summary call keeps stage 1 — no crash.
-    if (compaction && estimatePromptChars(prompt) > compaction.thresholdChars) {
-      return this.compactWithLlm(prompt);
+
+    // Stage 1 (deterministic, budget-gated): truncate the oldest tool results
+    // just enough to drop back under budget; the last keepRecentTurns turns are
+    // the untouchable floor. Measured on the fully rebuilt prompt each step.
+    const underBudget = (msgs: typeof state.messages): boolean =>
+      estimatePromptChars(buildPrompt(msgs)) <= compaction.thresholdChars;
+    const truncated = truncateOldObservations(
+      state.messages,
+      compaction.keepRecentTurns,
+      COMPACTION_HEAD_LINES,
+      underBudget,
+    );
+    const stage1Prompt = buildPrompt(truncated);
+    if (estimatePromptChars(stage1Prompt) <= compaction.thresholdChars) {
+      return stage1Prompt;
     }
-    return prompt;
+
+    // Stage 2 (LLM fallback): stage 1 could not free enough within its floor —
+    // fold the oldest half into a Merkzettel. A failed call keeps stage 1's
+    // prompt (no crash).
+    return this.compactWithLlm(stage1Prompt);
   }
 
   /**

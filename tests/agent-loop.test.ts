@@ -480,8 +480,10 @@ describe("DefaultAgentLoop", () => {
     // Rationale: on long research runs (16k ctx, 6k-char tool results, 12 turns)
     // early observations either fall out of the window (silent eviction) or clog
     // it. Compacting old observations cuts peak tokens and clarifies dependencies
-    // so a small model stops repeating a failed call. Two stages: deterministic
-    // truncation always, one LLM Merkzettel call only over a numCtx-derived budget.
+    // so a small model stops repeating a failed call. FULLY budget-gated: an
+    // always-on stage 1 measured HARMFUL (21% vs 44-48%) by evicting evidence
+    // that fit. Under budget → history untouched; over budget → deterministic
+    // truncation oldest-first, just enough, then LLM Merkzettel if still over.
     const longResult = (tag: string) =>
       JSON.stringify({ tool: "fs.read", result: [...Array(20)].map((_, i) => `line ${i}`).join("\n") + `\nTAIL_${tag}` });
 
@@ -504,7 +506,59 @@ describe("DefaultAgentLoop", () => {
       });
     }
 
-    it("truncates tool results older than keepRecentTurns, keeps recent ones full", async () => {
+    it("WITH the flag but under budget leaves tool results byte-identical (core regression)", async () => {
+      // The always-on stage 1 was measured HARMFUL (10/48 = 21% vs 44-48% with
+      // verify alone): it evicted evidence that would have fit. Under budget the
+      // history MUST pass through untouched — identical to no flag, no summary call.
+      const seen: ChatMessage[][] = [];
+      let calls = 0;
+      const llm = adapterFromFn(async (messages) => {
+        calls++;
+        seen.push(messages);
+        return { content: "ACTION: final_answer\nANSWER: ok" };
+      });
+      const memory = new InMemoryMemory();
+      await seedToolHistory(memory, "cmp-fit", ["A", "B", "C", "D"]);
+      // Default numCtx 16384 → budget ~45k chars; the seeded prompt is ~1k chars.
+      await makeLoop(memory, llm).run({ sessionId: "cmp-fit", userMessage: "go", contextCompaction: { keepRecentTurns: 2 } });
+
+      const tools = seen[0]!.filter((m) => m.role === "tool");
+      expect(calls).toBe(1); // no extra summary call
+      expect(tools).toHaveLength(4);
+      expect(tools.every((m) => !m.content.includes("[gekürzt:"))).toBe(true); // nothing truncated
+      expect(tools[0]!.content).toBe(longResult("A")); // byte-identical
+      expect(tools[3]!.content).toBe(longResult("D"));
+    });
+
+    it("over budget truncates the OLDEST first, only as many as needed (incremental)", async () => {
+      // Seeded prompt ~1070 chars; each truncation frees ~108. numCtx 363 →
+      // budget 1016: truncating just the oldest (A) drops to ~962 ≤ 1016, so the
+      // loop stops — B, C, D stay full even though keepRecentTurns=1 would allow
+      // truncating B and C. Proves oldest-first AND minimal.
+      const seen: ChatMessage[][] = [];
+      const llm = adapterFromFn(async (messages) => {
+        seen.push(messages);
+        return { content: "ACTION: final_answer\nANSWER: ok" };
+      });
+      const memory = new InMemoryMemory();
+      await seedToolHistory(memory, "cmp-inc", ["A", "B", "C", "D"]);
+      await makeLoop(memory, llm).run({ sessionId: "cmp-inc", userMessage: "go", contextCompaction: { keepRecentTurns: 1, numCtx: 363 } });
+
+      const tools = seen[0]!.filter((m) => m.role === "tool");
+      expect(tools).toHaveLength(4);
+      // Only the oldest (A) truncated.
+      expect(tools[0]!.content).toMatch(/\[gekürzt: war \d+ Zeichen, Tool fs\.read, Args \{"path":"A\.txt"\}\]/);
+      expect(tools[0]!.content).not.toContain("TAIL_A");
+      // B, C, D untouched — truncating A already met the budget.
+      expect(tools[1]!.content).toContain("TAIL_B");
+      expect(tools[1]!.content).not.toContain("[gekürzt:");
+      expect(tools[2]!.content).toContain("TAIL_C");
+      expect(tools[3]!.content).toContain("TAIL_D");
+    });
+
+    it("over budget protects the recent keepRecentTurns floor, truncates the rest", async () => {
+      // numCtx 320 → budget 896: truncating A (→962) is not enough, B (→854)
+      // clears it. keepRecentTurns=2 keeps C, D verbatim regardless.
       const seen: ChatMessage[][] = [];
       const llm = adapterFromFn(async (messages) => {
         seen.push(messages);
@@ -512,7 +566,7 @@ describe("DefaultAgentLoop", () => {
       });
       const memory = new InMemoryMemory();
       await seedToolHistory(memory, "cmp", ["A", "B", "C", "D"]);
-      await makeLoop(memory, llm).run({ sessionId: "cmp", userMessage: "go", contextCompaction: { keepRecentTurns: 2 } });
+      await makeLoop(memory, llm).run({ sessionId: "cmp", userMessage: "go", contextCompaction: { keepRecentTurns: 2, numCtx: 320 } });
 
       const tools = seen[0]!.filter((m) => m.role === "tool");
       expect(tools).toHaveLength(4);
@@ -520,7 +574,7 @@ describe("DefaultAgentLoop", () => {
       expect(tools[0]!.content).toMatch(/\[gekürzt: war \d+ Zeichen, Tool fs\.read, Args \{"path":"A\.txt"\}\]/);
       expect(tools[0]!.content).not.toContain("TAIL_A"); // dropped body (only first lines kept)
       expect(tools[1]!.content).toContain("[gekürzt:");
-      // Recent turns C,D: full — tail tag preserved, no marker.
+      // Recent turns C,D: full — tail tag preserved, no marker (the protected floor).
       expect(tools[2]!.content).toContain("TAIL_C");
       expect(tools[2]!.content).not.toContain("[gekürzt:");
       expect(tools[3]!.content).toContain("TAIL_D");
