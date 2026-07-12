@@ -55,6 +55,11 @@ const MAX_TURNS = 12;
 // truncated and, over a numCtx budget, folded into one LLM Merkzettel — the
 // lever against silent eviction on long research runs;
 // "minimal@verify+fold" = the best qwen arm (verifyFinalAnswer) plus that lever;
+// "minimal@rag+verify" / "minimal@rag+verify+fold" = the RAG arm (knowledge.search)
+// stacked with answer verification, and additionally with context compaction —
+// the full-stack combinations. The minimal@* levers (rag/verify/fold) are
+// independent and parsed as flags from the arm name, so each combination is a
+// substring switch, not a hand-written branch;
 // "native" = the fair competitor baseline (straight Ollama function calling,
 // no retries/recovery — mirrors bench/harnesses/ollama-native.ts but with the
 // same deployment prompt); smolagents-* = Hugging Face's library, off-the-shelf.
@@ -185,15 +190,21 @@ async function runFact(fact: CompanyFact, seed: number): Promise<FactRunResult> 
   if (HARNESS === "native") return runFactNative(fact, seed);
   if (HARNESS === "smolagents-tool") return runFactSmolagents(fact, seed, "tool");
   if (HARNESS === "smolagents-code") return runFactSmolagents(fact, seed, "code");
-  const isRag = HARNESS === "minimal@rag";
+  // The minimal@* combinations are the Cartesian product of three independent
+  // levers, so each is parsed as a flag from the arm name rather than a branch
+  // per combination. None of the non-minimal arm names contain these tokens, so
+  // every existing arm keeps its exact behaviour.
+  const useRag = HARNESS.includes("rag");
+  const useVerify = HARNESS.includes("verify");
+  const useFold = HARNESS.includes("fold");
   const toolBridge = new DefaultToolBridge();
   for (const tool of makeCompanyTools(CORPUS)) toolBridge.register(tool);
-  if (isRag) {
+  if (useRag) {
     toolBridge.register(makeCompanyKnowledgeTool(KNOWLEDGE_DB, new OllamaEmbedder({ baseUrl: BASE_URL })));
   }
   // The RAG arm gets one extra sentence pointing at knowledge.search as a
   // complement to fs.search — nothing here names a fact, just the new tool.
-  const systemInstruction = isRag
+  const systemInstruction = useRag
     ? SYSTEM_INSTRUCTION +
       " Ergänzend steht dir knowledge.search zur Verfügung: eine semantische Suche über denselben Datenbestand, die auch ohne exakte Stichwörter das passende Dokument findet — nutze sie als Ergänzung zu fs.search, besonders für 'wo steht etwas über X'-Fragen, und lies Treffer anschließend mit fs.read vollständig."
     : SYSTEM_INSTRUCTION;
@@ -217,9 +228,10 @@ async function runFact(fact: CompanyFact, seed: number): Promise<FactRunResult> 
     ...(HARNESS === "minimal@nt" ? { nativeToolCalling: true } : {}),
     // Answer verification: one extra LLM call re-checks the final answer
     // against the collected tool results before it ships (core feature).
-    // "minimal@verify+fold" combines it with context compaction — the best qwen
-    // arm plus the ACON lever (arXiv 2510.00615) for long research runs.
-    ...(HARNESS === "minimal@verify" || HARNESS === "minimal@verify+fold" ? { verifyFinalAnswer: true } : {}),
+    // "minimal@verify+fold" (and the rag+verify* arms) combine it with context
+    // compaction — the best qwen arm plus the ACON lever (arXiv 2510.00615) for
+    // long research runs.
+    ...(useVerify ? { verifyFinalAnswer: true } : {}),
     // Research config: up to 4 tool calls per turn, executed in parallel.
     // 4 because tool results land in context: 4 reads x ~1.5k tokens ≈ 6k
     // per turn still fits the 16k window with memory folding; smolagents'
@@ -243,11 +255,10 @@ async function runFact(fact: CompanyFact, seed: number): Promise<FactRunResult> 
       ...(HARNESS === "minimal@scaffold" ? { scaffold: true } : {}),
       // "minimal@fold" = opt-in context compaction only (deterministic old-
       // observation truncation + numCtx-budgeted LLM Merkzettel fallback);
-      // "minimal@verify+fold" adds it on top of answer verification. numCtx
-      // matches the 16k OllamaClient config above so the stage-2 budget is real.
-      ...(HARNESS === "minimal@fold" || HARNESS === "minimal@verify+fold"
-        ? { contextCompaction: { numCtx: 16384 } }
-        : {}),
+      // "minimal@verify+fold" / "minimal@rag+verify+fold" add it on top of answer
+      // verification. numCtx matches the 16k OllamaClient config above so the
+      // stage-2 budget is real.
+      ...(useFold ? { contextCompaction: { numCtx: 16384 } } : {}),
     });
     if (result.terminatedReason !== "final_answer") {
       const raw = result.rawTurns.at(-1)?.rawAssistantOutput?.slice(0, 2000);
@@ -271,8 +282,8 @@ async function main(): Promise<void> {
   if (HARNESS.startsWith("smolagents") && !smolagentsAvailable()) {
     throw new Error("smolagents sidecar missing — see bench/smolagents/README");
   }
-  if (HARNESS === "minimal@rag" && !existsSync(KNOWLEDGE_DB)) {
-    throw new Error(`minimal@rag needs the knowledge index (${KNOWLEDGE_DB}) — build it first: npx tsx bench/company/build-knowledge.ts`);
+  if (HARNESS.includes("rag") && !existsSync(KNOWLEDGE_DB)) {
+    throw new Error(`${HARNESS} needs the knowledge index (${KNOWLEDGE_DB}) — build it first: npx tsx bench/company/build-knowledge.ts`);
   }
   console.log(
     `\n=== company probe → ${BASE_URL} model=${MODEL} harness=${HARNESS} prompt=v${PROMPT_VERSION} set=${process.env.COMPANY_SET ?? "core"} seeds=${SEEDS.join(",")} temp=${TEMPERATURE} think=${THINK} ===\n`,
